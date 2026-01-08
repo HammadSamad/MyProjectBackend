@@ -1,0 +1,6 @@
+﻿namespace Backend_Api.Models
+{
+    public class ProductImageDTO
+    {
+    }
+}
