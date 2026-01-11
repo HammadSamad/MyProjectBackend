@@ -9,7 +9,6 @@ builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-var app = builder.Build();
 
 builder.Services.AddDbContext<LaptopHarbourDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("dbconnection")));
@@ -27,6 +26,8 @@ builder.Services.AddCors(options =>
                       });
 });
 
+var app = builder.Build();
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -38,6 +39,8 @@ app.UseHttpsRedirection();
 app.UseCors(MyAllowSpecificOrigins);
 
 app.UseAuthorization();
+
+app.UseStaticFiles();
 
 app.MapControllers();
 

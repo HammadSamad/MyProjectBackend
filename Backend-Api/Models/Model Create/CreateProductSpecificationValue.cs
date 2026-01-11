@@ -2,8 +2,12 @@
 {
     public class CreateProductSpecificationValue
     {
-        public string SpecificationName { get; set; } = null!;
-        public string DataType { get; set; } = null!;
-        public bool IsVariant { get; set; }
+        public int ProductId { get; set; }
+        public int SpecificationId { get; set; }
+
+        public string? ValueText { get; set; }
+        public decimal? ValueNumber { get; set; }
+        public bool? ValueBool { get; set; }
+        public int? OptionId { get; set; }
     }
 }

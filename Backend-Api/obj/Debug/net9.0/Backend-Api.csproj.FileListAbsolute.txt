@@ -162,3 +162,4 @@ D:\Projects\MyProjectBackend\Backend-Api\obj\Debug\net9.0\refint\Backend-Api.dll
 D:\Projects\MyProjectBackend\Backend-Api\obj\Debug\net9.0\Backend-Api.pdb
 D:\Projects\MyProjectBackend\Backend-Api\obj\Debug\net9.0\Backend-Api.genruntimeconfig.cache
 D:\Projects\MyProjectBackend\Backend-Api\obj\Debug\net9.0\ref\Backend-Api.dll
+D:\Projects\MyProjectBackend\Backend-Api\obj\Debug\net9.0\Backend-Api.sourcelink.json

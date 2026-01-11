@@ -30,6 +30,10 @@ public partial class LaptopHarbourDbContext : DbContext
 
     public virtual DbSet<Country> Countries { get; set; }
 
+    public virtual DbSet<MessageLog> MessageLogs { get; set; }
+
+    public virtual DbSet<Notification> Notifications { get; set; }
+
     public virtual DbSet<Order> Orders { get; set; }
 
     public virtual DbSet<OrderAddress> OrderAddresses { get; set; }
@@ -61,6 +65,8 @@ public partial class LaptopHarbourDbContext : DbContext
     public virtual DbSet<User> Users { get; set; }
 
     public virtual DbSet<UserRole> UserRoles { get; set; }
+
+    public virtual DbSet<UserVerification> UserVerifications { get; set; }
 
     public virtual DbSet<VariantPriceHistory> VariantPriceHistories { get; set; }
 
@@ -103,7 +109,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.Addresses)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__addresses__user___693CA210");
+                .HasConstraintName("FK__addresses__user___57DD0BE4");
         });
 
         modelBuilder.Entity<Brand>(entity =>
@@ -140,7 +146,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.Carts)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__carts__user_id__17036CC0");
+                .HasConstraintName("FK__carts__user_id__531856C7");
         });
 
         modelBuilder.Entity<CartItem>(entity =>
@@ -230,6 +236,62 @@ public partial class LaptopHarbourDbContext : DbContext
                 .HasColumnName("created_at");
         });
 
+        modelBuilder.Entity<MessageLog>(entity =>
+        {
+            entity.HasKey(e => e.MessageId).HasName("PK__message___0BBF6EE64AC5716B");
+
+            entity.ToTable("message_logs");
+
+            entity.Property(e => e.MessageId).HasColumnName("message_id");
+            entity.Property(e => e.Channel)
+                .HasMaxLength(20)
+                .HasColumnName("channel");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnName("created_at");
+            entity.Property(e => e.Message).HasColumnName("message");
+            entity.Property(e => e.Recipient)
+                .HasMaxLength(200)
+                .HasColumnName("recipient");
+            entity.Property(e => e.Status)
+                .HasMaxLength(20)
+                .HasColumnName("status");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+        });
+
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasKey(e => e.NotificationId).HasName("PK__notifica__E059842F7EB913D6");
+
+            entity.ToTable("notifications");
+
+            entity.Property(e => e.NotificationId).HasColumnName("notification_id");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnName("created_at");
+            entity.Property(e => e.IsRead)
+                .HasDefaultValue(false)
+                .HasColumnName("is_read");
+            entity.Property(e => e.Message)
+                .HasMaxLength(1000)
+                .HasColumnName("message");
+            entity.Property(e => e.TargetAudience)
+                .HasMaxLength(20)
+                .HasDefaultValue("user")
+                .HasColumnName("target_audience");
+            entity.Property(e => e.Title)
+                .HasMaxLength(200)
+                .HasColumnName("title");
+            entity.Property(e => e.Type)
+                .HasMaxLength(30)
+                .HasColumnName("type");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+
+            entity.HasOne(d => d.User).WithMany(p => p.Notifications)
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("FK__notificat__user___719CDDE7");
+        });
+
         modelBuilder.Entity<Order>(entity =>
         {
             entity.HasKey(e => e.OrderId).HasName("PK__orders__46596229DF36D567");
@@ -257,7 +319,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.Orders)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__orders__user_id__2CF2ADDF");
+                .HasConstraintName("FK__orders__user_id__55009F39");
         });
 
         modelBuilder.Entity<OrderAddress>(entity =>
@@ -428,7 +490,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.ProductReviews)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__product_r__user___3C34F16F");
+                .HasConstraintName("FK__product_r__user___55F4C372");
         });
 
         modelBuilder.Entity<ProductSpecificationValue>(entity =>
@@ -580,13 +642,13 @@ public partial class LaptopHarbourDbContext : DbContext
 
         modelBuilder.Entity<User>(entity =>
         {
-            entity.HasKey(e => e.UserId).HasName("PK__users__B9BE370FCAF6A079");
+            entity.HasKey(e => e.UserId).HasName("PK__tmp_ms_x__B9BE370F199CC095");
 
             entity.ToTable("users");
 
-            entity.HasIndex(e => e.Email, "UQ__users__AB6E6164CB22EFA0").IsUnique();
+            entity.HasIndex(e => e.Email, "UQ__tmp_ms_x__AB6E61643F4BAB7B").IsUnique();
 
-            entity.HasIndex(e => e.Username, "UQ__users__F3DBC572450C80E5").IsUnique();
+            entity.HasIndex(e => e.Username, "UQ__tmp_ms_x__F3DBC572CCBE67C5").IsUnique();
 
             entity.Property(e => e.UserId).HasColumnName("user_id");
             entity.Property(e => e.CreatedAt)
@@ -636,7 +698,35 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.UserRoles)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__user_role__user___5CD6CB2B");
+                .HasConstraintName("FK__user_role__user___56E8E7AB");
+        });
+
+        modelBuilder.Entity<UserVerification>(entity =>
+        {
+            entity.HasKey(e => e.VerificationId).HasName("PK__user_ver__24F17969C715D1FD");
+
+            entity.ToTable("user_verifications");
+
+            entity.Property(e => e.VerificationId).HasColumnName("verification_id");
+            entity.Property(e => e.Channel)
+                .HasMaxLength(20)
+                .HasColumnName("channel");
+            entity.Property(e => e.Code)
+                .HasMaxLength(10)
+                .HasColumnName("code");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnName("created_at");
+            entity.Property(e => e.ExpiresAt).HasColumnName("expires_at");
+            entity.Property(e => e.IsUsed)
+                .HasDefaultValue(false)
+                .HasColumnName("is_used");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+
+            entity.HasOne(d => d.User).WithMany(p => p.UserVerifications)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK__user_veri__user___6442E2C9");
         });
 
         modelBuilder.Entity<VariantPriceHistory>(entity =>
@@ -702,7 +792,7 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.HasOne(d => d.User).WithOne(p => p.Wishlist)
                 .HasForeignKey<Wishlist>(d => d.UserId)
-                .HasConstraintName("FK__wishlists__user___2180FB33");
+                .HasConstraintName("FK__wishlists__user___540C7B00");
         });
 
         modelBuilder.Entity<WishlistItem>(entity =>

@@ -64,6 +64,54 @@ CREATE TABLE user_roles (
 GO
 
 ------------------------------------------------------------
+-- OTP / Verification 
+------------------------------------------------------------
+
+CREATE TABLE user_verifications (
+    verification_id BIGINT IDENTITY PRIMARY KEY,
+    user_id INT NOT NULL,
+    channel NVARCHAR(20), -- email, whatsapp
+    code NVARCHAR(10),
+    expires_at DATETIME2,
+    is_used BIT DEFAULT 0,
+    created_at DATETIME2 DEFAULT SYSUTCDATETIME(),
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+GO
+
+------------------------------------------------------------
+-- User / Notification 
+------------------------------------------------------------
+
+CREATE TABLE notifications (
+    notification_id BIGINT IDENTITY PRIMARY KEY,
+    user_id INT NULL, -- NULL = broadcast
+    title NVARCHAR(200),
+    message NVARCHAR(1000),
+    type NVARCHAR(30), -- offer, order, system
+    target_audience NVARCHAR(20) DEFAULT 'user', -- user, admin, both
+    is_read BIT DEFAULT 0,
+    created_at DATETIME2 DEFAULT SYSUTCDATETIME(),
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+GO
+
+------------------------------------------------------------
+-- Email / WhatsApp Log 
+------------------------------------------------------------
+
+CREATE TABLE message_logs (
+    message_id BIGINT IDENTITY PRIMARY KEY,
+    user_id INT,
+    channel NVARCHAR(20), -- email, whatsapp
+    recipient NVARCHAR(200),
+    message NVARCHAR(MAX),
+    status NVARCHAR(20), -- sent, failed
+    created_at DATETIME2 DEFAULT SYSUTCDATETIME()
+);
+GO
+
+------------------------------------------------------------
 -- LOCATION / ADDRESSES
 ------------------------------------------------------------
 

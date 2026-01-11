@@ -2,5 +2,7 @@
 {
     public class CreateVariantSpecificationOption
     {
+        public int VariantId { get; set; }
+        public int OptionId { get; set; }
     }
 }
