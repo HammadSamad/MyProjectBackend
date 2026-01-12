@@ -359,6 +359,7 @@ CREATE TABLE product_reviews (
     rating INT CHECK (rating BETWEEN 1 AND 5),
     review_text NVARCHAR(2000),
     created_at DATETIME2 DEFAULT SYSUTCDATETIME(),
+    updated_at DATETIME2 DEFAULT SYSUTCDATETIME(),
     FOREIGN KEY (user_id) REFERENCES users(user_id),
     FOREIGN KEY (product_id) REFERENCES products(product_id)
 );
