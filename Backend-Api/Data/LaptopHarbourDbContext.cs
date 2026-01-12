@@ -475,6 +475,9 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
                 .HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnName("updated_at");
             entity.Property(e => e.ProductId).HasColumnName("product_id");
             entity.Property(e => e.Rating).HasColumnName("rating");
             entity.Property(e => e.ReviewText)
