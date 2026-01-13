@@ -1,10 +1,10 @@
 ﻿namespace Backend_Api.Models.Model_DTO
 {
-    public class RolePermissionDTO
+    public class UserRoleDTO
     {
+        public int UserId { get; set; }
         public int RoleId { get; set; }
-        public int PermissionId { get; set; }
-        public string? PermissionName { get; set; }
+        public string? RoleName { get; set; }
         public DateTime? CreatedAt { get; set; }
     }
 }
