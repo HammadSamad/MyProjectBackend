@@ -29,11 +29,23 @@ public partial class User
 
     public virtual ICollection<Cart> Carts { get; set; } = new List<Cart>();
 
+    public virtual ICollection<Complaint> Complaints { get; set; } = new List<Complaint>();
+
     public virtual ICollection<Notification> Notifications { get; set; } = new List<Notification>();
 
     public virtual ICollection<Order> Orders { get; set; } = new List<Order>();
 
+    public virtual ICollection<PasswordResetToken> PasswordResetTokens { get; set; } = new List<PasswordResetToken>();
+
+    public virtual ICollection<Payment> Payments { get; set; } = new List<Payment>();
+
     public virtual ICollection<ProductReview> ProductReviews { get; set; } = new List<ProductReview>();
+
+    public virtual ICollection<Return> Returns { get; set; } = new List<Return>();
+
+    public virtual ICollection<SearchHistory> SearchHistories { get; set; } = new List<SearchHistory>();
+
+    public virtual ICollection<UserRecentOrder> UserRecentOrders { get; set; } = new List<UserRecentOrder>();
 
     public virtual ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
 

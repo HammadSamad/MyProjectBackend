@@ -17,9 +17,9 @@ public partial class ProductReview
 
     public DateTime? CreatedAt { get; set; }
 
+    public DateTime? UpdatedAt { get; set; }
+
     public virtual Product Product { get; set; } = null!;
 
     public virtual User User { get; set; } = null!;
-
-    public DateTime UpdatedAt { get; set; }
 }
