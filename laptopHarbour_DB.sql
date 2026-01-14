@@ -374,3 +374,135 @@ CREATE TABLE variant_price_history (
     FOREIGN KEY (variant_id) REFERENCES product_variants(variant_id)
 );
 GO
+
+------------------------------------------------------------
+-- SHIPPING
+------------------------------------------------------------
+CREATE TABLE shipments (
+    shipment_id BIGINT IDENTITY PRIMARY KEY,
+    order_id BIGINT NOT NULL,
+    tracking_number NVARCHAR(100),
+    courier_name NVARCHAR(100),
+    shipping_cost DECIMAL(18,2) NOT NULL DEFAULT 0,
+    status NVARCHAR(30), -- pending, shipped, delivered
+    shipped_at DATETIME2 NULL,
+    delivered_at DATETIME2 NULL,
+    created_at DATETIME2 DEFAULT SYSUTCDATETIME(),
+    FOREIGN KEY (order_id) REFERENCES orders(order_id)
+);
+GO
+
+------------------------------------------------------------
+-- RETURN PRODUCT
+------------------------------------------------------------
+CREATE TABLE returns (
+    return_id BIGINT IDENTITY PRIMARY KEY,
+    order_id BIGINT NOT NULL,
+    user_id INT NOT NULL,
+    reason NVARCHAR(500),
+    status NVARCHAR(30), -- requested, approved, rejected, refunded
+    created_at DATETIME2 DEFAULT SYSUTCDATETIME(),
+    FOREIGN KEY (order_id) REFERENCES orders(order_id),
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+GO
+
+------------------------------------------------------------
+-- SEARCH HISTORY
+------------------------------------------------------------
+CREATE TABLE search_history (
+    search_id BIGINT IDENTITY PRIMARY KEY,
+    user_id INT NULL, -- NULL = guest user
+    search_text NVARCHAR(255),
+    searched_at DATETIME2 DEFAULT SYSUTCDATETIME(),
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+GO
+
+------------------------------------------------------------
+-- USER RECENT ORDERS
+------------------------------------------------------------
+CREATE TABLE user_recent_orders (
+    id BIGINT IDENTITY PRIMARY KEY,
+    user_id INT NOT NULL,
+    order_id BIGINT NOT NULL,
+    created_at DATETIME2 DEFAULT SYSUTCDATETIME(),
+    FOREIGN KEY (user_id) REFERENCES users(user_id),
+    FOREIGN KEY (order_id) REFERENCES orders(order_id)
+);
+GO
+
+------------------------------------------------------------
+-- PASSWORD RESET TOKENS
+------------------------------------------------------------
+CREATE TABLE password_reset_tokens (
+    reset_id BIGINT IDENTITY PRIMARY KEY,
+    user_id INT NOT NULL,
+    reset_token NVARCHAR(200) NOT NULL,
+    expires_at DATETIME2 NOT NULL,
+    is_used BIT DEFAULT 0,
+    created_at DATETIME2 DEFAULT SYSUTCDATETIME(),
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+GO
+
+------------------------------------------------------------
+-- PAYMENTS
+------------------------------------------------------------
+CREATE TABLE payments (
+    payment_id BIGINT IDENTITY PRIMARY KEY,
+    order_id BIGINT NOT NULL,
+    user_id INT NOT NULL,
+    payment_method_id INT NOT NULL,
+    amount DECIMAL(18,2) NOT NULL,
+    status NVARCHAR(30), -- pending, success, failed, refunded
+    transaction_reference NVARCHAR(200), -- from Stripe, PayPal, JazzCash, etc
+    paid_at DATETIME2 NULL,
+    created_at DATETIME2 DEFAULT SYSUTCDATETIME(),
+    FOREIGN KEY (order_id) REFERENCES orders(order_id),
+    FOREIGN KEY (user_id) REFERENCES users(user_id),
+    FOREIGN KEY (payment_method_id) REFERENCES payment_methods(payment_method_id)
+);
+GO
+
+CREATE TABLE complaints (
+    complaint_id BIGINT IDENTITY PRIMARY KEY,
+    user_id INT NOT NULL,
+    order_id BIGINT NULL,
+    subject NVARCHAR(200),
+    description NVARCHAR(2000),
+    status NVARCHAR(30),       -- open, in_progress, resolved, closed
+    priority NVARCHAR(20),     -- low, medium, high
+    created_at DATETIME2 DEFAULT SYSUTCDATETIME(),
+    updated_at DATETIME2 NULL,
+    FOREIGN KEY (user_id) REFERENCES users(user_id),
+    FOREIGN KEY (order_id) REFERENCES orders(order_id)
+);
+GO
+
+CREATE TABLE complaint_messages (
+    message_id BIGINT IDENTITY PRIMARY KEY,
+    complaint_id BIGINT NOT NULL,
+    sender_type NVARCHAR(20), -- user, admin
+    message NVARCHAR(2000),
+    created_at DATETIME2 DEFAULT SYSUTCDATETIME(),
+    FOREIGN KEY (complaint_id) REFERENCES complaints(complaint_id)
+);
+GO
+
+------------------------------------------------------------
+-- REFUNDS
+------------------------------------------------------------
+CREATE TABLE refunds (
+    refund_id BIGINT IDENTITY PRIMARY KEY,
+    payment_id BIGINT NOT NULL,
+    return_id BIGINT NULL,
+    amount DECIMAL(18,2) NOT NULL,
+    reason NVARCHAR(500),
+    status NVARCHAR(30), -- pending, processed, failed
+    refunded_at DATETIME2 NULL,
+    created_at DATETIME2 DEFAULT SYSUTCDATETIME(),
+    FOREIGN KEY (payment_id) REFERENCES payments(payment_id),
+    FOREIGN KEY (return_id) REFERENCES returns(return_id)
+);
+GO
