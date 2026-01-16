@@ -62,6 +62,8 @@ public partial class LaptopHarbourDbContext : DbContext
 
     public virtual DbSet<ProductVariant> ProductVariants { get; set; }
 
+    public virtual DbSet<RefreshToken> RefreshTokens { get; set; }
+
     public virtual DbSet<Refund> Refunds { get; set; }
 
     public virtual DbSet<Return> Returns { get; set; }
@@ -727,6 +729,20 @@ public partial class LaptopHarbourDbContext : DbContext
                 .HasForeignKey(d => d.ProductId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK__product_v__produ__0E6E26BF");
+        });
+
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.HasKey(e => e.RefreshTokenId).HasName("PK__RefreshT__F5845E395EF5989C");
+
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())");
+            entity.Property(e => e.Token).HasMaxLength(500);
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+
+            entity.HasOne(d => d.User).WithMany(p => p.RefreshTokens)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_RefreshTokens_Users");
         });
 
         modelBuilder.Entity<Refund>(entity =>

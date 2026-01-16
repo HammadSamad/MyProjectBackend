@@ -465,6 +465,21 @@ CREATE TABLE password_reset_tokens (
 );
 GO
 
+
+CREATE TABLE RefreshTokens (
+    RefreshTokenId INT IDENTITY(1,1) PRIMARY KEY,
+    user_id INT NOT NULL,
+    Token NVARCHAR(500) NOT NULL,
+    ExpiresAt DATETIME2 NOT NULL,
+    IsRevoked BIT NOT NULL DEFAULT 0,
+    CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+
+    CONSTRAINT FK_RefreshTokens_Users 
+        FOREIGN KEY (user_id) REFERENCES Users(user_id)
+);
+GO
+
+
 ------------------------------------------------------------
 -- PAYMENTS
 ------------------------------------------------------------

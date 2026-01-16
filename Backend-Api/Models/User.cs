@@ -19,11 +19,11 @@ public partial class User
 
     public string PasswordHash { get; set; } = null!;
 
-    public bool IsActive { get; set; } = true;
+    public bool? IsActive { get; set; }
 
-    public bool IsEmailVerified { get; set; } = false;
+    public bool? IsEmailVerified { get; set; }
 
-    public bool IsPhoneVerified { get; set; } = false;
+    public bool? IsPhoneVerified { get; set; }
 
     public DateTime? CreatedAt { get; set; }
 
@@ -44,6 +44,8 @@ public partial class User
     public virtual ICollection<Payment> Payments { get; set; } = new List<Payment>();
 
     public virtual ICollection<ProductReview> ProductReviews { get; set; } = new List<ProductReview>();
+
+    public virtual ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
 
     public virtual ICollection<Return> Returns { get; set; } = new List<Return>();
 
