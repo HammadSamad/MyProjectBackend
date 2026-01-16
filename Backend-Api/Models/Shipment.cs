@@ -17,6 +17,8 @@ public partial class Shipment
 
     public string? Status { get; set; }
 
+    public DateTime? ExpectedDeliveryDate { get; set; }
+
     public DateTime? ShippedAt { get; set; }
 
     public DateTime? DeliveredAt { get; set; }

@@ -13,7 +13,7 @@ public partial class Return
 
     public string? Reason { get; set; }
 
-    public string? Status { get; set; }
+    public string Status { get; set; } = null!;
 
     public DateTime? CreatedAt { get; set; }
 

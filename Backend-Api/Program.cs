@@ -1,5 +1,11 @@
 using Backend_Api.Data;
+using Backend_Api.Helpers;
+using Backend_Api.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +18,21 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddDbContext<LaptopHarbourDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("dbconnection")));
+
+builder.Services.AddScoped<JwtTokenService>();
+builder.Services.AddScoped<PasswordHasherHelper>();
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+.AddJwtBearer(options => options.TokenValidationParameters = new TokenValidationParameters
+{
+    ValidateIssuer = true,
+    ValidateAudience = true,
+    ValidateLifetime = true,
+    ValidateIssuerSigningKey = true,
+    ValidIssuer = "yourIssuer",
+    ValidAudience = "yourAudience",
+    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("this_is_my_secret_key_for_jwt_token_generation")) 
+});
 
 var MyAllowSpecificOrigins = "_myAllowSpecificOrigins";
 
@@ -37,6 +58,8 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseCors(MyAllowSpecificOrigins);
+
+app.UseAuthentication();
 
 app.UseAuthorization();
 

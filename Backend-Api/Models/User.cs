@@ -17,9 +17,13 @@ public partial class User
 
     public string? PhoneNumber { get; set; }
 
-    public byte[] PasswordHash { get; set; } = null!;
+    public string PasswordHash { get; set; } = null!;
 
-    public bool? IsActive { get; set; }
+    public bool IsActive { get; set; } = true;
+
+    public bool IsEmailVerified { get; set; } = false;
+
+    public bool IsPhoneVerified { get; set; } = false;
 
     public DateTime? CreatedAt { get; set; }
 
@@ -44,6 +48,8 @@ public partial class User
     public virtual ICollection<Return> Returns { get; set; } = new List<Return>();
 
     public virtual ICollection<SearchHistory> SearchHistories { get; set; } = new List<SearchHistory>();
+
+    public virtual UserProfile? UserProfile { get; set; }
 
     public virtual ICollection<UserRecentOrder> UserRecentOrders { get; set; } = new List<UserRecentOrder>();
 

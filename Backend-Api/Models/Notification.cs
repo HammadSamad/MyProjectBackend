@@ -15,7 +15,7 @@ public partial class Notification
 
     public string? Type { get; set; }
 
-    public string? TargetAudience { get; set; }
+    public string TargetAudience { get; set; } = null!;
 
     public bool? IsRead { get; set; }
 
