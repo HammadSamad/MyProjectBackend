@@ -3,6 +3,7 @@
     public class NotificationDTO
     {
         public long NotificationId { get; set; }
+        public int? UserId { get; set; }
         public string? Title { get; set; }
         public string? Message { get; set; }
         public string? Type { get; set; }
