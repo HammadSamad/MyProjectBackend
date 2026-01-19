@@ -34,4 +34,6 @@ public partial class Product
     public virtual ICollection<ProductSpecificationValue> ProductSpecificationValues { get; set; } = new List<ProductSpecificationValue>();
 
     public virtual ICollection<ProductVariant> ProductVariants { get; set; } = new List<ProductVariant>();
+
+    public virtual ICollection<ProductView> ProductViews { get; set; } = new List<ProductView>();
 }

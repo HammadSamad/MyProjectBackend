@@ -24,10 +24,12 @@ namespace Backend_Api.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateOrderItem([FromBody] CreateOrderitem model)
         {
-            var orderExists = await _context.Orders.AnyAsync(o => o.OrderId == model.OrderId);
-            if (!orderExists)
+            // Check Order
+            var order = await _context.Orders.FirstOrDefaultAsync(o => o.OrderId == model.OrderId);
+            if (order == null)
                 return BadRequest("Order does not exist");
 
+            // Check Product Variant
             var variantExists = await _context.ProductVariants.AnyAsync(v => v.VariantId == model.VariantId);
             if (!variantExists)
                 return BadRequest("Product Variant does not exist");
@@ -42,9 +44,35 @@ namespace Backend_Api.Controllers
             };
 
             _context.OrderItems.Add(orderItem);
+
+            // -------------------------------
+            // Update UserRecentOrder
+            // -------------------------------
+            var recentOrder = await _context.UserRecentOrders
+                .FirstOrDefaultAsync(r => r.UserId == order.UserId && r.OrderId == order.OrderId);
+
+            if (recentOrder != null)
+            {
+                recentOrder.CreatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                var newRecent = new UserRecentOrder
+                {
+                    UserId = order.UserId,
+                    OrderId = order.OrderId,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.UserRecentOrders.Add(newRecent);
+            }
+
             await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Order item added successfully", orderItemId = orderItem.OrderItemId });
+            return Ok(new
+            {
+                message = "Order item added successfully",
+                orderItemId = orderItem.OrderItemId
+            });
         }
 
         // ================= GET ALL =================
@@ -120,6 +148,10 @@ namespace Backend_Api.Controllers
             var orderItem = await _context.OrderItems.FindAsync(id);
             if (orderItem == null)
                 return NotFound("Order item not found");
+
+            var variantExists = await _context.ProductVariants.AnyAsync(v => v.VariantId == model.VariantId);
+            if (!variantExists)
+                return BadRequest("Product Variant does not exist");
 
             orderItem.VariantId = model.VariantId;
             orderItem.Quantity = model.Quantity;

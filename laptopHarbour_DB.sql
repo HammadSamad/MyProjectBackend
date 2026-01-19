@@ -504,6 +504,7 @@ CREATE TABLE complaints (
     complaint_id BIGINT IDENTITY PRIMARY KEY,
     user_id INT NOT NULL,
     order_id BIGINT NULL,
+    upload_image NVARCHAR(500),
     subject NVARCHAR(200),
     description NVARCHAR(2000),
     status NVARCHAR(30) DEFAULT ('open'),       -- open, in_progress, resolved, closed
@@ -520,6 +521,7 @@ CREATE TABLE complaint_messages (
     message_id BIGINT IDENTITY PRIMARY KEY,
     complaint_id BIGINT NOT NULL,
     sender_type NVARCHAR(20), -- user, admin
+    upload_image NVARCHAR(500),
     message NVARCHAR(2000),
     created_at DATETIME2 DEFAULT SYSUTCDATETIME(),
     FOREIGN KEY (complaint_id) REFERENCES complaints(complaint_id)
@@ -542,6 +544,17 @@ CREATE TABLE refunds (
     FOREIGN KEY (return_id) REFERENCES returns(return_id)
 );
 GO
+
+CREATE TABLE product_views (
+    view_id BIGINT IDENTITY PRIMARY KEY,
+    user_id INT NULL,        -- NULL = guest
+    product_id INT NOT NULL,
+    viewed_at DATETIME2 DEFAULT SYSUTCDATETIME(),
+    FOREIGN KEY (user_id) REFERENCES users(user_id),
+    FOREIGN KEY (product_id) REFERENCES products(product_id)
+);
+GO
+
 
 ------------------------------------------------------------
 -- Triggers
@@ -934,5 +947,22 @@ BEGIN
     SET order_status = 'cancelled'
     WHERE order_status = 'pending'
       AND created_at <= DATEADD(MINUTE, -30, SYSUTCDATETIME());
+END
+GO
+
+IF OBJECT_ID('trg_CleanupOldProductViews', 'TR') IS NOT NULL
+    DROP TRIGGER trg_CleanupOldProductViews;
+GO
+
+CREATE TRIGGER trg_CleanupOldProductViews
+ON product_views
+AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Delete views older than 7 days
+    DELETE FROM product_views
+    WHERE viewed_at <= DATEADD(DAY, -7, SYSUTCDATETIME());
 END
 GO

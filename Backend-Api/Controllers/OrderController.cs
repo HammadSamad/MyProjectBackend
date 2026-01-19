@@ -36,11 +36,33 @@ namespace Backend_Api.Controllers
             _context.Orders.Add(order);
             await _context.SaveChangesAsync();
 
+            // ---------------------------
+            // Add to UserRecentOrder
+            // ---------------------------
+            var existingRecent = await _context.UserRecentOrders
+                .FirstOrDefaultAsync(u => u.UserId == model.UserId && u.OrderId == order.OrderId);
+
+            if (existingRecent != null)
+            {
+                existingRecent.CreatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                var recentOrder = new UserRecentOrder
+                {
+                    UserId = model.UserId,
+                    OrderId = order.OrderId,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.UserRecentOrders.Add(recentOrder);
+            }
+
+            await _context.SaveChangesAsync();
+
             return Ok(new { message = "Order created successfully", orderId = order.OrderId });
         }
 
         // ================= GET ALL =================
-        // GET: api/Order
         [HttpGet]
         public async Task<ActionResult<IEnumerable<OrderDTO>>> GetAllOrders()
         {
@@ -61,7 +83,6 @@ namespace Backend_Api.Controllers
         }
 
         // ================= GET BY ID =================
-        // GET: api/Order/5
         [HttpGet("{id}")]
         public async Task<ActionResult<OrderDTO>> GetOrderById(long id)
         {
@@ -86,7 +107,6 @@ namespace Backend_Api.Controllers
         }
 
         // ================= GET BY USER =================
-        // GET: api/Order/user/3
         [HttpGet("user/{userId}")]
         public async Task<ActionResult<IEnumerable<OrderDTO>>> GetOrdersByUser(int userId)
         {
@@ -108,7 +128,6 @@ namespace Backend_Api.Controllers
         }
 
         // ================= UPDATE =================
-        // PUT: api/Order/5
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateOrder(long id, [FromBody] CreateOrder model)
         {
@@ -127,7 +146,6 @@ namespace Backend_Api.Controllers
         }
 
         // ================= DELETE =================
-        // DELETE: api/Order/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteOrder(long id)
         {
@@ -142,7 +160,6 @@ namespace Backend_Api.Controllers
         }
 
         // ================= UPDATE ORDER STATUS ONLY =================
-        // PATCH: api/Order/status/5
         [HttpPatch("status/{id}")]
         public async Task<IActionResult> UpdateOrderStatus(long id, [FromBody] string status)
         {

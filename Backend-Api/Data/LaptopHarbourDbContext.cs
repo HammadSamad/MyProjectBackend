@@ -62,6 +62,8 @@ public partial class LaptopHarbourDbContext : DbContext
 
     public virtual DbSet<ProductVariant> ProductVariants { get; set; }
 
+    public virtual DbSet<ProductView> ProductViews { get; set; }
+
     public virtual DbSet<RefreshToken> RefreshTokens { get; set; }
 
     public virtual DbSet<Refund> Refunds { get; set; }
@@ -248,7 +250,7 @@ public partial class LaptopHarbourDbContext : DbContext
 
         modelBuilder.Entity<Complaint>(entity =>
         {
-            entity.HasKey(e => e.ComplaintId).HasName("PK__complain__A771F61CDF7EEB5D");
+            entity.HasKey(e => e.ComplaintId).HasName("PK__tmp_ms_x__A771F61C9F9898B7");
 
             entity.ToTable("complaints", tb =>
                 {
@@ -263,6 +265,9 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.Property(e => e.Description)
                 .HasMaxLength(2000)
                 .HasColumnName("description");
+            entity.Property(e => e.Image)
+                .HasMaxLength(500)
+                .HasColumnName("image");
             entity.Property(e => e.OrderId).HasColumnName("order_id");
             entity.Property(e => e.Priority)
                 .HasMaxLength(20)
@@ -279,17 +284,17 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.HasOne(d => d.Order).WithMany(p => p.Complaints)
                 .HasForeignKey(d => d.OrderId)
-                .HasConstraintName("FK__complaint__order__2704CA5F");
+                .HasConstraintName("FK__complaint__order__62E4AA3C");
 
             entity.HasOne(d => d.User).WithMany(p => p.Complaints)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__complaint__user___075714DC");
+                .HasConstraintName("FK__complaint__user___61F08603");
         });
 
         modelBuilder.Entity<ComplaintMessage>(entity =>
         {
-            entity.HasKey(e => e.MessageId).HasName("PK__complain__0BBF6EE6A35DA7F7");
+            entity.HasKey(e => e.MessageId).HasName("PK__tmp_ms_x__0BBF6EE61DB39029");
 
             entity.ToTable("complaint_messages");
 
@@ -298,6 +303,9 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
                 .HasColumnName("created_at");
+            entity.Property(e => e.Image)
+                .HasMaxLength(500)
+                .HasColumnName("image");
             entity.Property(e => e.Message)
                 .HasMaxLength(2000)
                 .HasColumnName("message");
@@ -308,7 +316,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Complaint).WithMany(p => p.ComplaintMessages)
                 .HasForeignKey(d => d.ComplaintId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__complaint__compl__2AD55B43");
+                .HasConstraintName("FK__complaint__compl__6A85CC04");
         });
 
         modelBuilder.Entity<Country>(entity =>
@@ -729,6 +737,29 @@ public partial class LaptopHarbourDbContext : DbContext
                 .HasForeignKey(d => d.ProductId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK__product_v__produ__0E6E26BF");
+        });
+
+        modelBuilder.Entity<ProductView>(entity =>
+        {
+            entity.HasKey(e => e.ViewId).HasName("PK__product___B5A34EE238C8872E");
+
+            entity.ToTable("product_views", tb => tb.HasTrigger("trg_CleanupOldProductViews"));
+
+            entity.Property(e => e.ViewId).HasColumnName("view_id");
+            entity.Property(e => e.ProductId).HasColumnName("product_id");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.ViewedAt)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnName("viewed_at");
+
+            entity.HasOne(d => d.Product).WithMany(p => p.ProductViews)
+                .HasForeignKey(d => d.ProductId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK__product_v__produ__5C37ACAD");
+
+            entity.HasOne(d => d.User).WithMany(p => p.ProductViews)
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("FK__product_v__user___5B438874");
         });
 
         modelBuilder.Entity<RefreshToken>(entity =>

@@ -76,7 +76,7 @@ namespace Backend_Api.Controllers
                 UserId = user.UserId,
                 Channel = "email",
                 Code = otp,
-                ExpiresAt = DateTime.UtcNow.AddMinutes(10),
+                ExpiresAt = DateTime.UtcNow.AddMinutes(5),
                 IsUsed = false,
                 CreatedAt = DateTime.UtcNow
             };
@@ -253,7 +253,7 @@ namespace Backend_Api.Controllers
             {
                 UserId = user.UserId,
                 ResetToken = token,
-                ExpiresAt = DateTime.UtcNow.AddMinutes(30),
+                ExpiresAt = DateTime.UtcNow.AddMinutes(5),
                 IsUsed = false,
                 CreatedAt = DateTime.UtcNow
             };

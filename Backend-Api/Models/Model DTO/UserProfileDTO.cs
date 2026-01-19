@@ -6,5 +6,6 @@
         public string? ProfileImage { get; set; }
         public string? Bio { get; set; }
         public DateTime? CreatedAt { get; set; }
+        public DateTime? UpdatedAt { get; set; }
     }
 }

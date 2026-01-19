@@ -11,6 +11,8 @@ public partial class Complaint
 
     public long? OrderId { get; set; }
 
+    public string? Image { get; set; }
+
     public string? Subject { get; set; }
 
     public string? Description { get; set; }
