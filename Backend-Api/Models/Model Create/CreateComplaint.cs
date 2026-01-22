@@ -7,6 +7,6 @@
         public string? Subject { get; set; }
         public string? Description { get; set; }
         public string? Priority { get; set; }
-        public IFormFile? Image { get; set; }  
+        public List<IFormFile>? Images { get; set; }   // multiple
     }
 }

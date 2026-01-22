@@ -4,7 +4,7 @@
     {
         public long ComplaintId { get; set; }
         public string? SenderType { get; set; }  // "User" or "Admin"
-        public IFormFile? Image { get; set; }       
+        public List<IFormFile>? Images { get; set; }    // multiple       
         public string? Message { get; set; }
     }
 }

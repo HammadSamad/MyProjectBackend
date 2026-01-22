@@ -4,6 +4,7 @@ using Backend_Api.Models.Model_Create;
 using Backend_Api.Models.Model_DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace Backend_Api.Controllers
 {
@@ -20,24 +21,35 @@ namespace Backend_Api.Controllers
             _config = config;
         }
 
+        private async Task<string?> SaveMultipleImages(List<IFormFile>? images, string folder)
+        {
+            if (images == null || images.Count == 0) return null;
+
+            var uploadPath = Path.Combine(_config["StoredFilesPath"] ?? "wwwroot/upload", folder);
+            Directory.CreateDirectory(uploadPath);
+
+            List<string> fileNames = new();
+
+            foreach (var file in images)
+            {
+                var ext = Path.GetExtension(file.FileName);
+                var fileName = Guid.NewGuid() + ext;
+                var filePath = Path.Combine(uploadPath, fileName);
+
+                using var stream = System.IO.File.Create(filePath);
+                await file.CopyToAsync(stream);
+
+                fileNames.Add(fileName);
+            }
+
+            return JsonSerializer.Serialize(fileNames);
+        }
+
         // ================= CREATE =================
         [HttpPost]
         public async Task<IActionResult> CreateComplaint([FromForm] CreateComplaint model)
         {
-            string? imageName = null;
-
-            if (model.Image != null && model.Image.Length > 0)
-            {
-                var uploadPath = Path.Combine(_config["StoredFilesPath"] ?? "wwwroot/upload", "Complaints");
-                Directory.CreateDirectory(uploadPath);
-
-                var ext = Path.GetExtension(model.Image.FileName);
-                imageName = Guid.NewGuid() + ext;
-                var filePath = Path.Combine(uploadPath, imageName);
-
-                using var stream = System.IO.File.Create(filePath);
-                await model.Image.CopyToAsync(stream);
-            }
+            var imageJson = await SaveMultipleImages(model.Images, "Complaints");
 
             var complaint = new Complaint
             {
@@ -47,7 +59,7 @@ namespace Backend_Api.Controllers
                 Description = model.Description,
                 Priority = model.Priority,
                 Status = "Pending",
-                Image = imageName,
+                Image = imageJson,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
@@ -113,27 +125,10 @@ namespace Backend_Api.Controllers
             var complaint = await _context.Complaints.FindAsync(id);
             if (complaint == null) return NotFound("Complaint not found.");
 
-            // Handle new image upload
-            if (model.Image != null && model.Image.Length > 0)
+            if (model.Images != null && model.Images.Count > 0)
             {
-                var uploadPath = Path.Combine(_config["StoredFilesPath"] ?? "wwwroot/upload", "Complaints");
-                Directory.CreateDirectory(uploadPath);
-
-                var ext = Path.GetExtension(model.Image.FileName);
-                var imageName = Guid.NewGuid() + ext;
-                var filePath = Path.Combine(uploadPath, imageName);
-
-                using var stream = System.IO.File.Create(filePath);
-                await model.Image.CopyToAsync(stream);
-
-                // Delete old image
-                if (!string.IsNullOrEmpty(complaint.Image))
-                {
-                    var oldFile = Path.Combine(uploadPath, complaint.Image);
-                    if (System.IO.File.Exists(oldFile)) System.IO.File.Delete(oldFile);
-                }
-
-                complaint.Image = imageName;
+                var imageJson = await SaveMultipleImages(model.Images, "Complaints");
+                complaint.Image = imageJson;
             }
 
             complaint.Subject = model.Subject ?? complaint.Subject;
@@ -151,14 +146,6 @@ namespace Backend_Api.Controllers
         {
             var complaint = await _context.Complaints.FindAsync(id);
             if (complaint == null) return NotFound("Complaint not found.");
-
-            // Delete image file
-            if (!string.IsNullOrEmpty(complaint.Image))
-            {
-                var uploadPath = Path.Combine(_config["StoredFilesPath"] ?? "wwwroot/upload", "Complaints");
-                var file = Path.Combine(uploadPath, complaint.Image);
-                if (System.IO.File.Exists(file)) System.IO.File.Delete(file);
-            }
 
             _context.Complaints.Remove(complaint);
             await _context.SaveChangesAsync();
