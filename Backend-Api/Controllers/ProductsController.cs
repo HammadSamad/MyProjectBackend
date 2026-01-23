@@ -38,7 +38,7 @@ namespace Backend_Api.Controllers
             try
             {
                 if (page <= 0 || pageSize <= 0)
-                    return BadRequest("Page and PageSize must be greater than 0.");
+                    return BadRequest(new { error = "Page and PageSize must be greater than 0." });
 
                 var query = _context.Products
                     .Include(p => p.Brand)
@@ -127,7 +127,7 @@ namespace Backend_Api.Controllers
                     .ToListAsync();
 
                 if (!products.Any())
-                    return NotFound("No products found with given filters.");
+                    return NotFound(new { error = "No products found with given filters." });
 
                 return Ok(new
                 {
@@ -142,8 +142,8 @@ namespace Backend_Api.Controllers
             {
                 return StatusCode(500, new
                 {
-                    message = "An error occurred while fetching products.",
-                    error = ex.Message
+                    error = "An error occurred while fetching products.",
+                    details = ex.Message
                 });
             }
         }
@@ -171,7 +171,7 @@ namespace Backend_Api.Controllers
                     .FirstOrDefaultAsync(p => p.ProductId == id);
 
                 if (product == null)
-                    return NotFound("Product not found.");
+                    return NotFound(new { error = "Product not found." });
 
                 return Ok(new
                 {
@@ -183,8 +183,8 @@ namespace Backend_Api.Controllers
             {
                 return StatusCode(500, new
                 {
-                    message = "An error occurred while fetching the product.",
-                    error = ex.Message
+                    error = "An error occurred while fetching the product.",
+                    details = ex.Message
                 });
             }
         }
@@ -224,8 +224,8 @@ namespace Backend_Api.Controllers
             {
                 return StatusCode(500, new
                 {
-                    message = "An error occurred while creating product.",
-                    error = ex.Message
+                    error = "An error occurred while creating product.",
+                    details = ex.Message
                 });
             }
         }
@@ -240,7 +240,7 @@ namespace Backend_Api.Controllers
             {
                 var product = await _context.Products.FindAsync(id);
                 if (product == null)
-                    return NotFound("Product not found.");
+                    return NotFound(new { error = "Product not found." });
 
                 product.ProductName = model.ProductName;
                 product.Description = model.Description;
@@ -258,8 +258,8 @@ namespace Backend_Api.Controllers
             {
                 return StatusCode(500, new
                 {
-                    message = "An error occurred while updating product.",
-                    error = ex.Message
+                    error = "An error occurred while updating product.",
+                    details = ex.Message
                 });
             }
         }
@@ -275,10 +275,14 @@ namespace Backend_Api.Controllers
                 var product = await _context.Products
                     .Include(p => p.ProductImages)
                     .Include(p => p.ProductVariants)
+                    .Include(p => p.OrderItems) // Ensure this is included
                     .FirstOrDefaultAsync(p => p.ProductId == id);
 
                 if (product == null)
-                    return NotFound("Product not found.");
+                    return NotFound(new { error = "Product not found." });
+
+                if (product.OrderItems is IEnumerable<object> orderItems && orderItems.Any())
+                    return BadRequest(new { error = "Cannot delete this product because it has associated orders." });
 
                 // Delete images from disk
                 foreach (var img in product.ProductImages)
@@ -303,8 +307,8 @@ namespace Backend_Api.Controllers
             {
                 return StatusCode(500, new
                 {
-                    message = "An error occurred while deleting product.",
-                    error = ex.Message
+                    error = "An error occurred while deleting product.",
+                    details = ex.Message
                 });
             }
         }

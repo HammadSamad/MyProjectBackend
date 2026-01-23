@@ -9,9 +9,11 @@ public partial class City
 
     public int CountryId { get; set; }
 
-    public string? CityName { get; set; }
+    public string CityName { get; set; } = null!;
 
     public DateTime? CreatedAt { get; set; }
+
+    public DateTime? UpdatedAt { get; set; }
 
     public virtual ICollection<Address> Addresses { get; set; } = new List<Address>();
 

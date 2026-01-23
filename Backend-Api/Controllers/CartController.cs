@@ -22,109 +22,188 @@ namespace Backend_Api.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateCart([FromBody] CreateCart model)
         {
-            var existingCart = await _context.Carts
-                .FirstOrDefaultAsync(c => c.UserId == model.UserId);
-
-            if (existingCart != null)
-                return BadRequest("Cart already exists for this user.");
-
-            var cart = new Cart
+            try
             {
-                UserId = model.UserId,
-                CreatedAt = DateTime.UtcNow
-            };
+                if (model == null || model.UserId <= 0)
+                    return BadRequest(new { message = "Invalid cart data. UserId is required." });
 
-            _context.Carts.Add(cart);
-            await _context.SaveChangesAsync();
+                var existingCart = await _context.Carts
+                    .FirstOrDefaultAsync(c => c.UserId == model.UserId);
 
-            return Ok(new { message = "Cart created successfully", cartId = cart.CartId });
+                if (existingCart != null)
+                    return BadRequest(new { message = "Cart already exists for this user." });
+
+                var cart = new Cart
+                {
+                    UserId = model.UserId,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.Carts.Add(cart);
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message = "Cart created successfully.",
+                    cartId = cart.CartId
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    message = "An error occurred while creating the cart.",
+                    error = ex.Message
+                });
+            }
         }
 
         // ================= GET ALL =================
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<CartDTO>>> GetAllCarts()
+        public async Task<IActionResult> GetAllCarts()
         {
-            var carts = await _context.Carts
-                .Select(c => new CartDTO
-                {
-                    CartId = c.CartId,
-                    UserId = c.UserId,
-                    CreatedAt = c.CreatedAt,
-                    UpdatedAt = c.UpdatedAt
-                })
-                .ToListAsync();
+            try
+            {
+                var carts = await _context.Carts
+                    .Select(c => new CartDTO
+                    {
+                        CartId = c.CartId,
+                        UserId = c.UserId,
+                        CreatedAt = c.CreatedAt,
+                        UpdatedAt = c.UpdatedAt
+                    })
+                    .ToListAsync();
 
-            return Ok(carts);
+                if (carts.Count == 0)
+                    return Ok(new { message = "No carts found.", data = new List<CartDTO>() });
+
+                return Ok(carts);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    message = "An error occurred while fetching carts.",
+                    error = ex.Message
+                });
+            }
         }
 
         // ================= GET BY ID =================
         [HttpGet("{id}")]
-        public async Task<ActionResult<CartDTO>> GetCartById(int id)
+        public async Task<IActionResult> GetCartById(int id)
         {
-            var cart = await _context.Carts
-                .Where(c => c.CartId == id)
-                .Select(c => new CartDTO
+            try
+            {
+                var cart = await _context.Carts
+                    .Where(c => c.CartId == id)
+                    .Select(c => new CartDTO
+                    {
+                        CartId = c.CartId,
+                        UserId = c.UserId,
+                        CreatedAt = c.CreatedAt,
+                        UpdatedAt = c.UpdatedAt
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (cart == null)
+                    return NotFound(new { message = "Cart not found." });
+
+                return Ok(cart);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
                 {
-                    CartId = c.CartId,
-                    UserId = c.UserId,
-                    CreatedAt = c.CreatedAt,
-                    UpdatedAt = c.UpdatedAt
-                })
-                .FirstOrDefaultAsync();
-
-            if (cart == null)
-                return NotFound("Cart not found");
-
-            return Ok(cart);
+                    message = "An error occurred while fetching the cart.",
+                    error = ex.Message
+                });
+            }
         }
 
         // ================= GET BY USER =================
         [HttpGet("user/{userId}")]
-        public async Task<ActionResult<CartDTO>> GetCartByUserId(int userId)
+        public async Task<IActionResult> GetCartByUserId(int userId)
         {
-            var cart = await _context.Carts
-                .Where(c => c.UserId == userId)
-                .Select(c => new CartDTO
+            try
+            {
+                if (userId <= 0)
+                    return BadRequest(new { message = "Invalid UserId." });
+
+                var cart = await _context.Carts
+                    .Where(c => c.UserId == userId)
+                    .Select(c => new CartDTO
+                    {
+                        CartId = c.CartId,
+                        UserId = c.UserId,
+                        CreatedAt = c.CreatedAt,
+                        UpdatedAt = c.UpdatedAt
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (cart == null)
+                    return NotFound(new { message = "Cart not found for this user." });
+
+                return Ok(cart);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
                 {
-                    CartId = c.CartId,
-                    UserId = c.UserId,
-                    CreatedAt = c.CreatedAt,
-                    UpdatedAt = c.UpdatedAt
-                })
-                .FirstOrDefaultAsync();
-
-            if (cart == null)
-                return NotFound("Cart not found for this user");
-
-            return Ok(cart);
+                    message = "An error occurred while fetching the user's cart.",
+                    error = ex.Message
+                });
+            }
         }
 
         // ================= UPDATE =================
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateCart(int id)
         {
-            var cart = await _context.Carts.FindAsync(id);
-            if (cart == null)
-                return NotFound("Cart not found");
+            try
+            {
+                var cart = await _context.Carts.FindAsync(id);
+                if (cart == null)
+                    return NotFound(new { message = "Cart not found." });
 
-            cart.UpdatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
+                cart.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Cart updated successfully" });
+                return Ok(new { message = "Cart updated successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    message = "An error occurred while updating the cart.",
+                    error = ex.Message
+                });
+            }
         }
 
         // ================= DELETE =================
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteCart(int id)
         {
-            var cart = await _context.Carts.FindAsync(id);
-            if (cart == null)
-                return NotFound("Cart not found");
+            try
+            {
+                var cart = await _context.Carts.FindAsync(id);
+                if (cart == null)
+                    return NotFound(new { message = "Cart not found." });
 
-            _context.Carts.Remove(cart);
-            await _context.SaveChangesAsync();
+                _context.Carts.Remove(cart);
+                await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Cart deleted successfully" });
+                return Ok(new { message = "Cart deleted successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    message = "An error occurred while deleting the cart.",
+                    error = ex.Message
+                });
+            }
         }
     }
 }

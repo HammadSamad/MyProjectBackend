@@ -4,7 +4,6 @@ using Backend_Api.Models.Model_Create;
 using Backend_Api.Models.Model_DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System;
 
 namespace Backend_Api.Controllers
 {
@@ -24,55 +23,77 @@ namespace Backend_Api.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateOrderItem([FromBody] CreateOrderitem model)
         {
-            // Check Order
-            var order = await _context.Orders.FirstOrDefaultAsync(o => o.OrderId == model.OrderId);
-            if (order == null)
-                return BadRequest("Order does not exist");
+            if (model == null)
+                return BadRequest(new { message = "Request body cannot be empty." });
 
-            // Check Product Variant
-            var variantExists = await _context.ProductVariants.AnyAsync(v => v.VariantId == model.VariantId);
-            if (!variantExists)
-                return BadRequest("Product Variant does not exist");
+            if (model.Quantity <= 0)
+                return BadRequest(new { message = "Quantity must be greater than zero." });
 
-            var orderItem = new OrderItem
+            if (model.Price <= 0)
+                return BadRequest(new { message = "Price must be greater than zero." });
+
+            try
             {
-                OrderId = model.OrderId,
-                VariantId = model.VariantId,
-                Quantity = model.Quantity,
-                Price = model.Price,
-                CreatedAt = DateTime.UtcNow
-            };
+                // Check Order
+                var order = await _context.Orders.FirstOrDefaultAsync(o => o.OrderId == model.OrderId);
+                if (order == null)
+                    return BadRequest(new { message = "Order does not exist." });
 
-            _context.OrderItems.Add(orderItem);
+                // Check Product Variant
+                var variantExists = await _context.ProductVariants
+                    .AnyAsync(v => v.VariantId == model.VariantId);
 
-            // -------------------------------
-            // Update UserRecentOrder
-            // -------------------------------
-            var recentOrder = await _context.UserRecentOrders
-                .FirstOrDefaultAsync(r => r.UserId == order.UserId && r.OrderId == order.OrderId);
+                if (!variantExists)
+                    return BadRequest(new { message = "Product Variant does not exist." });
 
-            if (recentOrder != null)
-            {
-                recentOrder.CreatedAt = DateTime.UtcNow;
-            }
-            else
-            {
-                var newRecent = new UserRecentOrder
+                var orderItem = new OrderItem
                 {
-                    UserId = order.UserId,
-                    OrderId = order.OrderId,
+                    OrderId = model.OrderId,
+                    VariantId = model.VariantId,
+                    Quantity = model.Quantity,
+                    Price = model.Price,
                     CreatedAt = DateTime.UtcNow
                 };
-                _context.UserRecentOrders.Add(newRecent);
+
+                _context.OrderItems.Add(orderItem);
+
+                // -------------------------------
+                // Update UserRecentOrder
+                // -------------------------------
+                var recentOrder = await _context.UserRecentOrders
+                    .FirstOrDefaultAsync(r => r.UserId == order.UserId && r.OrderId == order.OrderId);
+
+                if (recentOrder != null)
+                {
+                    recentOrder.CreatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    var newRecent = new UserRecentOrder
+                    {
+                        UserId = order.UserId,
+                        OrderId = order.OrderId,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.UserRecentOrders.Add(newRecent);
+                }
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message = "Order item added successfully.",
+                    orderItemId = orderItem.OrderItemId
+                });
             }
-
-            await _context.SaveChangesAsync();
-
-            return Ok(new
+            catch (DbUpdateException)
             {
-                message = "Order item added successfully",
-                orderItemId = orderItem.OrderItemId
-            });
+                return StatusCode(500, new { message = "Database error occurred while creating the order item." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Unexpected error occurred.", details = ex.Message });
+            }
         }
 
         // ================= GET ALL =================
@@ -80,19 +101,29 @@ namespace Backend_Api.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<OrderItemDTO>>> GetAllOrderItems()
         {
-            var items = await _context.OrderItems
-                .Select(oi => new OrderItemDTO
-                {
-                    OrderItemId = oi.OrderItemId,
-                    OrderId = oi.OrderId,
-                    VariantId = oi.VariantId,
-                    Quantity = oi.Quantity,
-                    Price = oi.Price,
-                    CreatedAt = oi.CreatedAt
-                })
-                .ToListAsync();
+            try
+            {
+                var items = await _context.OrderItems
+                    .Select(oi => new OrderItemDTO
+                    {
+                        OrderItemId = oi.OrderItemId,
+                        OrderId = oi.OrderId,
+                        VariantId = oi.VariantId,
+                        Quantity = oi.Quantity,
+                        Price = oi.Price,
+                        CreatedAt = oi.CreatedAt
+                    })
+                    .ToListAsync();
 
-            return Ok(items);
+                if (items.Count == 0)
+                    return NotFound(new { message = "No order items found." });
+
+                return Ok(items);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to fetch order items.", details = ex.Message });
+            }
         }
 
         // ================= GET BY ID =================
@@ -100,23 +131,33 @@ namespace Backend_Api.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<OrderItemDTO>> GetOrderItemById(long id)
         {
-            var item = await _context.OrderItems
-                .Where(oi => oi.OrderItemId == id)
-                .Select(oi => new OrderItemDTO
-                {
-                    OrderItemId = oi.OrderItemId,
-                    OrderId = oi.OrderId,
-                    VariantId = oi.VariantId,
-                    Quantity = oi.Quantity,
-                    Price = oi.Price,
-                    CreatedAt = oi.CreatedAt
-                })
-                .FirstOrDefaultAsync();
+            if (id <= 0)
+                return BadRequest(new { message = "Invalid order item ID." });
 
-            if (item == null)
-                return NotFound("Order item not found");
+            try
+            {
+                var item = await _context.OrderItems
+                    .Where(oi => oi.OrderItemId == id)
+                    .Select(oi => new OrderItemDTO
+                    {
+                        OrderItemId = oi.OrderItemId,
+                        OrderId = oi.OrderId,
+                        VariantId = oi.VariantId,
+                        Quantity = oi.Quantity,
+                        Price = oi.Price,
+                        CreatedAt = oi.CreatedAt
+                    })
+                    .FirstOrDefaultAsync();
 
-            return Ok(item);
+                if (item == null)
+                    return NotFound(new { message = "Order item not found." });
+
+                return Ok(item);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to fetch order item.", details = ex.Message });
+            }
         }
 
         // ================= GET BY ORDER =================
@@ -124,20 +165,33 @@ namespace Backend_Api.Controllers
         [HttpGet("order/{orderId}")]
         public async Task<ActionResult<IEnumerable<OrderItemDTO>>> GetItemsByOrder(long orderId)
         {
-            var items = await _context.OrderItems
-                .Where(oi => oi.OrderId == orderId)
-                .Select(oi => new OrderItemDTO
-                {
-                    OrderItemId = oi.OrderItemId,
-                    OrderId = oi.OrderId,
-                    VariantId = oi.VariantId,
-                    Quantity = oi.Quantity,
-                    Price = oi.Price,
-                    CreatedAt = oi.CreatedAt
-                })
-                .ToListAsync();
+            if (orderId <= 0)
+                return BadRequest(new { message = "Invalid order ID." });
 
-            return Ok(items);
+            try
+            {
+                var items = await _context.OrderItems
+                    .Where(oi => oi.OrderId == orderId)
+                    .Select(oi => new OrderItemDTO
+                    {
+                        OrderItemId = oi.OrderItemId,
+                        OrderId = oi.OrderId,
+                        VariantId = oi.VariantId,
+                        Quantity = oi.Quantity,
+                        Price = oi.Price,
+                        CreatedAt = oi.CreatedAt
+                    })
+                    .ToListAsync();
+
+                if (items.Count == 0)
+                    return NotFound(new { message = "No order items found for this order." });
+
+                return Ok(items);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to fetch order items by order.", details = ex.Message });
+            }
         }
 
         // ================= UPDATE =================
@@ -145,21 +199,46 @@ namespace Backend_Api.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateOrderItem(long id, [FromBody] CreateOrderitem model)
         {
-            var orderItem = await _context.OrderItems.FindAsync(id);
-            if (orderItem == null)
-                return NotFound("Order item not found");
+            if (id <= 0)
+                return BadRequest(new { message = "Invalid order item ID." });
 
-            var variantExists = await _context.ProductVariants.AnyAsync(v => v.VariantId == model.VariantId);
-            if (!variantExists)
-                return BadRequest("Product Variant does not exist");
+            if (model == null)
+                return BadRequest(new { message = "Request body cannot be empty." });
 
-            orderItem.VariantId = model.VariantId;
-            orderItem.Quantity = model.Quantity;
-            orderItem.Price = model.Price;
+            if (model.Quantity <= 0)
+                return BadRequest(new { message = "Quantity must be greater than zero." });
 
-            await _context.SaveChangesAsync();
+            if (model.Price <= 0)
+                return BadRequest(new { message = "Price must be greater than zero." });
 
-            return Ok(new { message = "Order item updated successfully" });
+            try
+            {
+                var orderItem = await _context.OrderItems.FindAsync(id);
+                if (orderItem == null)
+                    return NotFound(new { message = "Order item not found." });
+
+                var variantExists = await _context.ProductVariants
+                    .AnyAsync(v => v.VariantId == model.VariantId);
+
+                if (!variantExists)
+                    return BadRequest(new { message = "Product Variant does not exist." });
+
+                orderItem.VariantId = model.VariantId;
+                orderItem.Quantity = model.Quantity;
+                orderItem.Price = model.Price;
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Order item updated successfully." });
+            }
+            catch (DbUpdateException)
+            {
+                return StatusCode(500, new { message = "Database error occurred while updating the order item." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Unexpected error occurred.", details = ex.Message });
+            }
         }
 
         // ================= DELETE =================
@@ -167,14 +246,28 @@ namespace Backend_Api.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteOrderItem(long id)
         {
-            var orderItem = await _context.OrderItems.FindAsync(id);
-            if (orderItem == null)
-                return NotFound("Order item not found");
+            if (id <= 0)
+                return BadRequest(new { message = "Invalid order item ID." });
 
-            _context.OrderItems.Remove(orderItem);
-            await _context.SaveChangesAsync();
+            try
+            {
+                var orderItem = await _context.OrderItems.FindAsync(id);
+                if (orderItem == null)
+                    return NotFound(new { message = "Order item not found." });
 
-            return Ok(new { message = "Order item deleted successfully" });
+                _context.OrderItems.Remove(orderItem);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Order item deleted successfully." });
+            }
+            catch (DbUpdateException)
+            {
+                return StatusCode(500, new { message = "Database error occurred while deleting the order item." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Unexpected error occurred.", details = ex.Message });
+            }
         }
     }
 }

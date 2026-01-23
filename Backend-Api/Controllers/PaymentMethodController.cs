@@ -5,6 +5,8 @@ using Backend_Api.Models.Model_DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace Backend_Api.Controllers
 {
@@ -20,102 +22,151 @@ namespace Backend_Api.Controllers
         }
 
         // ================= CREATE =================
-        // POST: api/PaymentMethod
         [HttpPost]
         public async Task<IActionResult> CreatePaymentMethod([FromBody] CreatePaymentMethod model)
         {
-            if (await _context.PaymentMethods.AnyAsync(x => x.MethodName == model.MethodName))
-                return BadRequest("Payment method already exists.");
-
-            var paymentMethod = new PaymentMethod
+            try
             {
-                MethodName = model.MethodName,
-                CreatedAt = DateTime.UtcNow
-            };
+                if (model == null || string.IsNullOrWhiteSpace(model.MethodName))
+                    return BadRequest(new { error = "MethodName is required." });
 
-            _context.PaymentMethods.Add(paymentMethod);
-            await _context.SaveChangesAsync();
+                // Prevent duplicate
+                bool exists = await _context.PaymentMethods
+                    .AnyAsync(pm => pm.MethodName.ToLower() == model.MethodName.ToLower());
+                if (exists)
+                    return BadRequest(new { error = "Payment method already exists." });
 
-            return Ok(new
+                var paymentMethod = new PaymentMethod
+                {
+                    MethodName = model.MethodName,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.PaymentMethods.Add(paymentMethod);
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message = "Payment method created successfully",
+                    paymentMethodId = paymentMethod.PaymentMethodId
+                });
+            }
+            catch (Exception ex)
             {
-                message = "Payment method created successfully",
-                paymentMethodId = paymentMethod.PaymentMethodId
-            });
+                return StatusCode(500, new { error = "Failed to create payment method.", details = ex.Message });
+            }
         }
 
         // ================= GET ALL =================
-        // GET: api/PaymentMethod
         [HttpGet]
         public async Task<ActionResult<IEnumerable<PaymentMethodDTO>>> GetAllPaymentMethods()
         {
-            var methods = await _context.PaymentMethods
-                .Select(pm => new PaymentMethodDTO
-                {
-                    PaymentMethodId = pm.PaymentMethodId,
-                    MethodName = pm.MethodName
-                })
-                .ToListAsync();
+            try
+            {
+                var methods = await _context.PaymentMethods
+                    .Select(pm => new PaymentMethodDTO
+                    {
+                        PaymentMethodId = pm.PaymentMethodId,
+                        MethodName = pm.MethodName
+                    })
+                    .ToListAsync();
 
-            return Ok(methods);
+                if (methods.Count == 0)
+                    return Ok(new { message = "No payment methods found.", data = new List<PaymentMethodDTO>() });
+
+                return Ok(methods);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch payment methods.", details = ex.Message });
+            }
         }
 
         // ================= GET BY ID =================
-        // GET: api/PaymentMethod/5
         [HttpGet("{id}")]
         public async Task<ActionResult<PaymentMethodDTO>> GetPaymentMethodById(int id)
         {
-            var method = await _context.PaymentMethods
-                .Where(pm => pm.PaymentMethodId == id)
-                .Select(pm => new PaymentMethodDTO
-                {
-                    PaymentMethodId = pm.PaymentMethodId,
-                    MethodName = pm.MethodName
-                })
-                .FirstOrDefaultAsync();
+            try
+            {
+                var method = await _context.PaymentMethods
+                    .Where(pm => pm.PaymentMethodId == id)
+                    .Select(pm => new PaymentMethodDTO
+                    {
+                        PaymentMethodId = pm.PaymentMethodId,
+                        MethodName = pm.MethodName
+                    })
+                    .FirstOrDefaultAsync();
 
-            if (method == null)
-                return NotFound("Payment method not found.");
+                if (method == null)
+                    return NotFound(new { error = "Payment method not found." });
 
-            return Ok(method);
+                return Ok(method);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch payment method.", details = ex.Message });
+            }
         }
 
         // ================= UPDATE =================
-        // PUT: api/PaymentMethod/5
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdatePaymentMethod(int id, [FromBody] CreatePaymentMethod model)
         {
-            var paymentMethod = await _context.PaymentMethods.FindAsync(id);
-            if (paymentMethod == null)
-                return NotFound("Payment method not found.");
+            try
+            {
+                if (model == null || string.IsNullOrWhiteSpace(model.MethodName))
+                    return BadRequest(new { error = "MethodName is required." });
 
-            paymentMethod.MethodName = model.MethodName;
+                var paymentMethod = await _context.PaymentMethods.FindAsync(id);
+                if (paymentMethod == null)
+                    return NotFound(new { error = "Payment method not found." });
 
-            await _context.SaveChangesAsync();
+                // Prevent duplicate name on update
+                bool duplicateExists = await _context.PaymentMethods
+                    .AnyAsync(pm => pm.PaymentMethodId != id &&
+                                    pm.MethodName.ToLower() == model.MethodName.ToLower());
+                if (duplicateExists)
+                    return BadRequest(new { error = "Another payment method with the same name already exists." });
 
-            return Ok(new { message = "Payment method updated successfully." });
+                paymentMethod.MethodName = model.MethodName;
+                paymentMethod.UpdatedAt = DateTime.UtcNow;
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Payment method updated successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to update payment method.", details = ex.Message });
+            }
         }
 
         // ================= DELETE =================
-        // DELETE: api/PaymentMethod/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeletePaymentMethod(int id)
         {
-            var paymentMethod = await _context.PaymentMethods
-                .Include(pm => pm.Payments)
-                .Include(pm => pm.Orders)
-                .FirstOrDefaultAsync(pm => pm.PaymentMethodId == id);
+            try
+            {
+                var paymentMethod = await _context.PaymentMethods
+                    .Include(pm => pm.Payments)
+                    .Include(pm => pm.Orders)
+                    .FirstOrDefaultAsync(pm => pm.PaymentMethodId == id);
 
-            if (paymentMethod == null)
-                return NotFound("Payment method not found.");
+                if (paymentMethod == null)
+                    return NotFound(new { error = "Payment method not found." });
 
-            // Safety check: don’t delete if already in use
-            if (paymentMethod.Payments.Any() || paymentMethod.Orders.Any())
-                return BadRequest("This payment method is already in use and cannot be deleted.");
+                if (paymentMethod.Payments.Count > 0 || paymentMethod.Orders.Count > 0)
+                    return BadRequest(new { error = "This payment method is already in use and cannot be deleted." });
 
-            _context.PaymentMethods.Remove(paymentMethod);
-            await _context.SaveChangesAsync();
+                _context.PaymentMethods.Remove(paymentMethod);
+                await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Payment method deleted successfully." });
+                return Ok(new { message = "Payment method deleted successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to delete payment method.", details = ex.Message });
+            }
         }
     }
 }

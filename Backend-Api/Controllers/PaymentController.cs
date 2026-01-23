@@ -19,148 +19,240 @@ namespace Backend_Api.Controllers
         }
 
         // ================= CREATE =================
-        // POST: api/Payment
         [HttpPost]
         public async Task<IActionResult> CreatePayment([FromBody] CreatePayment model)
         {
-            var orderExists = await _context.Orders.AnyAsync(o => o.OrderId == model.OrderId);
-            if (!orderExists)
-                return BadRequest("Order does not exist.");
-
-            var paymentMethodExists = await _context.PaymentMethods
-                .AnyAsync(pm => pm.PaymentMethodId == model.PaymentMethodId);
-            if (!paymentMethodExists)
-                return BadRequest("Payment method does not exist.");
-
-            var payment = new Payment
+            try
             {
-                OrderId = model.OrderId,
-                PaymentMethodId = model.PaymentMethodId,
-                Amount = model.Amount,
-                Status = "Pending",
-                CreatedAt = DateTime.UtcNow
-            };
+                if (model == null)
+                    return BadRequest(new { error = "Invalid request payload." });
 
-            _context.Payments.Add(payment);
-            await _context.SaveChangesAsync();
+                var orderExists = await _context.Orders.AnyAsync(o => o.OrderId == model.OrderId);
+                if (!orderExists)
+                    return BadRequest(new { error = "Order does not exist." });
 
-            return Ok(new
+                var paymentMethodExists = await _context.PaymentMethods
+                    .AnyAsync(pm => pm.PaymentMethodId == model.PaymentMethodId);
+                if (!paymentMethodExists)
+                    return BadRequest(new { error = "Payment method does not exist." });
+
+                var duplicateExists = await _context.Payments
+                    .AnyAsync(p => p.OrderId == model.OrderId && p.PaymentMethodId == model.PaymentMethodId);
+                if (duplicateExists)
+                    return BadRequest(new { error = "A payment for this order with the selected payment method already exists." });
+
+                var payment = new Payment
+                {
+                    OrderId = model.OrderId,
+                    PaymentMethodId = model.PaymentMethodId,
+                    Amount = model.Amount,
+                    Status = "Pending",
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.Payments.Add(payment);
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message = "Payment created successfully",
+                    paymentId = payment.PaymentId
+                });
+            }
+            catch (Exception ex)
             {
-                message = "Payment created successfully",
-                paymentId = payment.PaymentId
-            });
+                return StatusCode(500, new { error = "Failed to create payment.", details = ex.Message });
+            }
         }
 
         // ================= GET ALL =================
-        // GET: api/Payment
         [HttpGet]
         public async Task<ActionResult<IEnumerable<PaymentDTO>>> GetAllPayments()
         {
-            var payments = await _context.Payments
-                .Select(p => new PaymentDTO
-                {
-                    PaymentId = p.PaymentId,
-                    OrderId = p.OrderId,
-                    PaymentMethodId = p.PaymentMethodId,
-                    Amount = p.Amount,
-                    Status = p.Status
-                })
-                .ToListAsync();
+            try
+            {
+                var payments = await _context.Payments
+                    .Select(p => new PaymentDTO
+                    {
+                        PaymentId = p.PaymentId,
+                        OrderId = p.OrderId,
+                        PaymentMethodId = p.PaymentMethodId,
+                        Amount = p.Amount,
+                        Status = p.Status
+                    })
+                    .ToListAsync();
 
-            return Ok(payments);
+                if (!payments.Any())
+                    return Ok(new { message = "No payments found.", data = new List<PaymentDTO>() });
+
+                return Ok(payments);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch payments.", details = ex.Message });
+            }
+        }
+
+        // ================= GET UNPAID PAYMENTS =================
+        [HttpGet("unpaid")]
+        public async Task<ActionResult<IEnumerable<PaymentDTO>>> GetUnpaidPayments()
+        {
+            try
+            {
+                var unpaidPayments = await _context.Payments
+                    .Where(p => p.Status != "Paid")
+                    .Select(p => new PaymentDTO
+                    {
+                        PaymentId = p.PaymentId,
+                        OrderId = p.OrderId,
+                        PaymentMethodId = p.PaymentMethodId,
+                        Amount = p.Amount,
+                        Status = p.Status
+                    })
+                    .ToListAsync();
+
+                if (!unpaidPayments.Any())
+                    return Ok(new { message = "No unpaid payments found.", data = new List<PaymentDTO>() });
+
+                return Ok(unpaidPayments);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch unpaid payments.", details = ex.Message });
+            }
         }
 
         // ================= GET BY ID =================
-        // GET: api/Payment/5
         [HttpGet("{id}")]
         public async Task<ActionResult<PaymentDTO>> GetPaymentById(long id)
         {
-            var payment = await _context.Payments
-                .Where(p => p.PaymentId == id)
-                .Select(p => new PaymentDTO
-                {
-                    PaymentId = p.PaymentId,
-                    OrderId = p.OrderId,
-                    PaymentMethodId = p.PaymentMethodId,
-                    Amount = p.Amount,
-                    Status = p.Status
-                })
-                .FirstOrDefaultAsync();
+            try
+            {
+                var payment = await _context.Payments
+                    .Where(p => p.PaymentId == id)
+                    .Select(p => new PaymentDTO
+                    {
+                        PaymentId = p.PaymentId,
+                        OrderId = p.OrderId,
+                        PaymentMethodId = p.PaymentMethodId,
+                        Amount = p.Amount,
+                        Status = p.Status
+                    })
+                    .FirstOrDefaultAsync();
 
-            if (payment == null)
-                return NotFound("Payment not found.");
+                if (payment == null)
+                    return NotFound(new { error = "Payment not found." });
 
-            return Ok(payment);
+                return Ok(payment);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch payment.", details = ex.Message });
+            }
         }
 
         // ================= GET BY ORDER =================
-        // GET: api/Payment/order/10
         [HttpGet("order/{orderId}")]
         public async Task<ActionResult<IEnumerable<PaymentDTO>>> GetPaymentsByOrder(long orderId)
         {
-            var payments = await _context.Payments
-                .Where(p => p.OrderId == orderId)
-                .Select(p => new PaymentDTO
-                {
-                    PaymentId = p.PaymentId,
-                    OrderId = p.OrderId,
-                    PaymentMethodId = p.PaymentMethodId,
-                    Amount = p.Amount,
-                    Status = p.Status
-                })
-                .ToListAsync();
+            try
+            {
+                var payments = await _context.Payments
+                    .Where(p => p.OrderId == orderId)
+                    .Select(p => new PaymentDTO
+                    {
+                        PaymentId = p.PaymentId,
+                        OrderId = p.OrderId,
+                        PaymentMethodId = p.PaymentMethodId,
+                        Amount = p.Amount,
+                        Status = p.Status
+                    })
+                    .ToListAsync();
 
-            return Ok(payments);
+                if (!payments.Any())
+                    return Ok(new { message = "No payments found for this order.", data = new List<PaymentDTO>() });
+
+                return Ok(payments);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch payments by order.", details = ex.Message });
+            }
         }
 
         // ================= UPDATE =================
-        // PUT: api/Payment/5
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdatePayment(long id, [FromBody] PaymentDTO model)
         {
-            var payment = await _context.Payments.FindAsync(id);
-            if (payment == null)
-                return NotFound("Payment not found.");
+            try
+            {
+                var payment = await _context.Payments.FindAsync(id);
+                if (payment == null)
+                    return NotFound(new { error = "Payment not found." });
 
-            payment.Amount = model.Amount;
-            payment.Status = model.Status;
-            payment.PaymentMethodId = model.PaymentMethodId;
+                var duplicateExists = await _context.Payments
+                    .AnyAsync(p => p.PaymentId != id
+                                   && p.OrderId == model.OrderId
+                                   && p.PaymentMethodId == model.PaymentMethodId);
+                if (duplicateExists)
+                    return BadRequest(new { error = "A payment for this order with the selected payment method already exists." });
 
-            await _context.SaveChangesAsync();
+                payment.Amount = model.Amount;
+                payment.Status = model.Status;
+                payment.PaymentMethodId = model.PaymentMethodId;
 
-            return Ok(new { message = "Payment updated successfully." });
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Payment updated successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to update payment.", details = ex.Message });
+            }
         }
 
         // ================= MARK AS PAID =================
-        // PUT: api/Payment/mark-paid/5
         [HttpPut("mark-paid/{id}")]
         public async Task<IActionResult> MarkAsPaid(long id)
         {
-            var payment = await _context.Payments.FindAsync(id);
-            if (payment == null)
-                return NotFound("Payment not found.");
+            try
+            {
+                var payment = await _context.Payments.FindAsync(id);
+                if (payment == null)
+                    return NotFound(new { error = "Payment not found." });
 
-            payment.Status = "Paid";
-            payment.PaidAt = DateTime.UtcNow;
+                payment.Status = "Paid";
+                payment.PaidAt = DateTime.UtcNow;
 
-            await _context.SaveChangesAsync();
+                await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Payment marked as Paid." });
+                return Ok(new { message = "Payment marked as Paid." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to mark payment as Paid.", details = ex.Message });
+            }
         }
 
         // ================= DELETE =================
-        // DELETE: api/Payment/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeletePayment(long id)
         {
-            var payment = await _context.Payments.FindAsync(id);
-            if (payment == null)
-                return NotFound("Payment not found.");
+            try
+            {
+                var payment = await _context.Payments.FindAsync(id);
+                if (payment == null)
+                    return NotFound(new { error = "Payment not found." });
 
-            _context.Payments.Remove(payment);
-            await _context.SaveChangesAsync();
+                _context.Payments.Remove(payment);
+                await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Payment deleted successfully." });
+                return Ok(new { message = "Payment deleted successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to delete payment.", details = ex.Message });
+            }
         }
     }
 }
