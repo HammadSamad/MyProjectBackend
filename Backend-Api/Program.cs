@@ -26,12 +26,13 @@ builder.Services.AddDbContext<LaptopHarbourDbContext>(options =>
 builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddScoped<PasswordHasherHelper>();
 builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddHostedService<OrderAutoCancelService>();
 
 // -----------------------------
 // JWT Authentication
 // -----------------------------
 var jwtSettings = builder.Configuration.GetSection("Jwt");
-var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]);
+var key = Encoding.UTF8.GetBytes(jwtSettings["Key"]!);
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>

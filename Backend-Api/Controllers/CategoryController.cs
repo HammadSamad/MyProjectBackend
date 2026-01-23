@@ -20,168 +20,218 @@ namespace Backend_Api.Controllers
         }
 
         // =========================================================
-        // POST: api/Category → Create new category
+        // CREATE CATEGORY
         // =========================================================
         [HttpPost]
         public async Task<IActionResult> CreateCategory([FromForm] CreateCategory model)
         {
-            if (!ModelState.IsValid)
-                return BadRequest(ModelState);
-
-            string? imageName = null;
-
-            // Image upload
-            if (model.CategoryImage != null && model.CategoryImage.Length > 0)
+            try
             {
-                var uploadRoot = _config["StoredFilesPath"] ?? Path.Combine("wwwroot", "uploads");
-                var categoryFolder = Path.Combine(uploadRoot, "Categories");
-                Directory.CreateDirectory(categoryFolder);
+                if (!ModelState.IsValid)
+                    return BadRequest(new { message = "Invalid data provided.", errors = ModelState });
 
-                var ext = Path.GetExtension(model.CategoryImage.FileName);
-                imageName = Guid.NewGuid() + ext;
-                var filePath = Path.Combine(categoryFolder, imageName);
+                string? imageName = null;
 
-                using var stream = System.IO.File.Create(filePath);
-                await model.CategoryImage.CopyToAsync(stream);
+                if (model.CategoryImage != null && model.CategoryImage.Length > 0)
+                {
+                    var uploadRoot = _config["StoredFilesPath"] ?? Path.Combine("wwwroot", "uploads");
+                    var categoryFolder = Path.Combine(uploadRoot, "Categories");
+                    Directory.CreateDirectory(categoryFolder);
+
+                    var ext = Path.GetExtension(model.CategoryImage.FileName);
+                    imageName = Guid.NewGuid() + ext;
+                    var filePath = Path.Combine(categoryFolder, imageName);
+
+                    using var stream = System.IO.File.Create(filePath);
+                    await model.CategoryImage.CopyToAsync(stream);
+                }
+
+                var category = new Category
+                {
+                    CategoryName = model.CategoryName,
+                    ParentCategoryId = model.ParentCategoryId,
+                    CategoryImage = imageName,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _context.Categories.Add(category);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Category created successfully." });
             }
-
-            var category = new Category
+            catch (Exception ex)
             {
-                CategoryName = model.CategoryName,
-                ParentCategoryId = model.ParentCategoryId,
-                CategoryImage = imageName,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            _context.Categories.Add(category);
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Category created successfully." });
+                return StatusCode(500, new
+                {
+                    message = "An error occurred while creating category.",
+                    error = ex.Message
+                });
+            }
         }
 
         // =========================================================
-        // GET: api/Category → Get all categories
+        // GET ALL
         // =========================================================
         [HttpGet]
         public async Task<IActionResult> GetCategories()
         {
-            var categories = await _context.Categories
-                .Select(c => new CategoryDTO
-                {
-                    CategoryId = c.CategoryId,
-                    CategoryName = c.CategoryName,
-                    CategoryImage = c.CategoryImage,
-                    ParentCategoryId = c.ParentCategoryId,
-                    CreatedAt = c.CreatedAt,
-                    UpdatedAt = c.UpdatedAt
-                })
-                .ToListAsync();
+            try
+            {
+                var categories = await _context.Categories
+                    .Select(c => new CategoryDTO
+                    {
+                        CategoryId = c.CategoryId,
+                        CategoryName = c.CategoryName,
+                        CategoryImage = c.CategoryImage,
+                        ParentCategoryId = c.ParentCategoryId,
+                        CreatedAt = c.CreatedAt,
+                        UpdatedAt = c.UpdatedAt
+                    })
+                    .ToListAsync();
 
-            return Ok(categories);
+                return Ok(categories);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    message = "Failed to fetch categories.",
+                    error = ex.Message
+                });
+            }
         }
 
         // =========================================================
-        // GET: api/Category/{id} → Get single category
+        // GET BY ID
         // =========================================================
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetCategoryById(int id)
         {
-            var category = await _context.Categories
-                .Where(c => c.CategoryId == id)
-                .Select(c => new CategoryDTO
+            try
+            {
+                var category = await _context.Categories
+                    .Where(c => c.CategoryId == id)
+                    .Select(c => new CategoryDTO
+                    {
+                        CategoryId = c.CategoryId,
+                        CategoryName = c.CategoryName,
+                        CategoryImage = c.CategoryImage,
+                        ParentCategoryId = c.ParentCategoryId,
+                        CreatedAt = c.CreatedAt,
+                        UpdatedAt = c.UpdatedAt
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (category == null)
+                    return NotFound(new { message = "Category not found." });
+
+                return Ok(category);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
                 {
-                    CategoryId = c.CategoryId,
-                    CategoryName = c.CategoryName,
-                    CategoryImage = c.CategoryImage,
-                    ParentCategoryId = c.ParentCategoryId,
-                    CreatedAt = c.CreatedAt,
-                    UpdatedAt = c.UpdatedAt
-                })
-                .FirstOrDefaultAsync();
-
-            if (category == null)
-                return NotFound("Category not found.");
-
-            return Ok(category);
+                    message = "Failed to fetch category.",
+                    error = ex.Message
+                });
+            }
         }
 
         // =========================================================
-        // PUT: api/Category/{id} → Update category
+        // UPDATE
         // =========================================================
         [HttpPut("{id:int}")]
         public async Task<IActionResult> UpdateCategory(int id, [FromForm] CreateCategory model)
         {
-            var category = await _context.Categories.FindAsync(id);
-            if (category == null)
-                return NotFound("Category not found.");
-
-            category.CategoryName = model.CategoryName;
-            category.ParentCategoryId = model.ParentCategoryId;
-
-            // Update image if new image provided
-            if (model.CategoryImage != null && model.CategoryImage.Length > 0)
+            try
             {
-                var uploadRoot = _config["StoredFilesPath"] ?? Path.Combine("wwwroot", "uploads");
-                var categoryFolder = Path.Combine(uploadRoot, "Categories");
-                Directory.CreateDirectory(categoryFolder);
+                var category = await _context.Categories.FindAsync(id);
+                if (category == null)
+                    return NotFound(new { message = "Category not found." });
 
-                // Delete old image
-                if (!string.IsNullOrEmpty(category.CategoryImage))
+                category.CategoryName = model.CategoryName;
+                category.ParentCategoryId = model.ParentCategoryId;
+
+                if (model.CategoryImage != null && model.CategoryImage.Length > 0)
                 {
-                    var oldFile = Path.Combine(categoryFolder, category.CategoryImage);
-                    if (System.IO.File.Exists(oldFile))
-                        System.IO.File.Delete(oldFile);
+                    var uploadRoot = _config["StoredFilesPath"] ?? Path.Combine("wwwroot", "uploads");
+                    var categoryFolder = Path.Combine(uploadRoot, "Categories");
+                    Directory.CreateDirectory(categoryFolder);
+
+                    if (!string.IsNullOrEmpty(category.CategoryImage))
+                    {
+                        var oldFile = Path.Combine(categoryFolder, category.CategoryImage);
+                        if (System.IO.File.Exists(oldFile))
+                            System.IO.File.Delete(oldFile);
+                    }
+
+                    var ext = Path.GetExtension(model.CategoryImage.FileName);
+                    var newImageName = Guid.NewGuid() + ext;
+                    var filePath = Path.Combine(categoryFolder, newImageName);
+
+                    using var stream = System.IO.File.Create(filePath);
+                    await model.CategoryImage.CopyToAsync(stream);
+
+                    category.CategoryImage = newImageName;
                 }
 
-                var ext = Path.GetExtension(model.CategoryImage.FileName);
-                var newImageName = Guid.NewGuid() + ext;
-                var filePath = Path.Combine(categoryFolder, newImageName);
+                category.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
 
-                using var stream = System.IO.File.Create(filePath);
-                await model.CategoryImage.CopyToAsync(stream);
-
-                category.CategoryImage = newImageName;
+                return Ok(new { message = "Category updated successfully." });
             }
-
-            category.UpdatedAt = DateTime.UtcNow;
-
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "Category updated successfully." });
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    message = "Failed to update category.",
+                    error = ex.Message
+                });
+            }
         }
 
         // =========================================================
-        // DELETE: api/Category/{id} → Delete category
+        // DELETE
         // =========================================================
         [HttpDelete("{id:int}")]
         public async Task<IActionResult> DeleteCategory(int id)
         {
-            var category = await _context.Categories
-                .Include(c => c.InverseParentCategory)
-                .FirstOrDefaultAsync(c => c.CategoryId == id);
-
-            if (category == null)
-                return NotFound("Category not found.");
-
-            // Optional: prevent deleting if subcategories exist
-            if (category.InverseParentCategory.Any())
-                return BadRequest("Cannot delete category because it has subcategories.");
-
-            // Delete image
-            if (!string.IsNullOrEmpty(category.CategoryImage))
+            try
             {
-                var uploadRoot = _config["StoredFilesPath"] ?? Path.Combine("wwwroot", "uploads");
-                var categoryFolder = Path.Combine(uploadRoot, "Categories");
-                var path = Path.Combine(categoryFolder, category.CategoryImage);
+                var category = await _context.Categories
+                    .Include(c => c.InverseParentCategory)
+                    .FirstOrDefaultAsync(c => c.CategoryId == id);
 
-                if (System.IO.File.Exists(path))
-                    System.IO.File.Delete(path);
+                if (category == null)
+                    return NotFound(new { message = "Category not found." });
+
+                if (category.InverseParentCategory.Count > 0)
+                    return BadRequest(new { message = "Cannot delete category because it has subcategories." });
+
+                if (!string.IsNullOrEmpty(category.CategoryImage))
+                {
+                    var uploadRoot = _config["StoredFilesPath"] ?? Path.Combine("wwwroot", "uploads");
+                    var categoryFolder = Path.Combine(uploadRoot, "Categories");
+                    var path = Path.Combine(categoryFolder, category.CategoryImage);
+
+                    if (System.IO.File.Exists(path))
+                        System.IO.File.Delete(path);
+                }
+
+                _context.Categories.Remove(category);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Category deleted successfully." });
             }
-
-            _context.Categories.Remove(category);
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Category deleted successfully." });
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    message = "Failed to delete category.",
+                    error = ex.Message
+                });
+            }
         }
     }
 }
