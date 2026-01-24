@@ -2,6 +2,7 @@
 using Backend_Api.Models;
 using Backend_Api.Models.Model_Create;
 using Backend_Api.Models.Model_DTO;
+using Backend_Api.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,10 +13,12 @@ namespace Backend_Api.Controllers
     public class PaymentController : ControllerBase
     {
         private readonly LaptopHarbourDbContext _context;
+        private readonly IEmailService _emailService;
 
-        public PaymentController(LaptopHarbourDbContext context)
+        public PaymentController(LaptopHarbourDbContext context, IEmailService emailService)
         {
             _context = context;
+            _emailService = emailService;
         }
 
         // ================= CREATE =================
@@ -211,26 +214,59 @@ namespace Backend_Api.Controllers
             }
         }
 
-        // ================= MARK AS PAID =================
+        // ================= MARK AS PAID + SEND EMAIL =================
         [HttpPut("mark-paid/{id}")]
         public async Task<IActionResult> MarkAsPaid(long id)
         {
             try
             {
-                var payment = await _context.Payments.FindAsync(id);
+                var payment = await _context.Payments
+                    .Include(p => p.Order)
+                        .ThenInclude(o => o.User)   // Order → User navigation
+                    .FirstOrDefaultAsync(p => p.PaymentId == id);
+
                 if (payment == null)
                     return NotFound(new { error = "Payment not found." });
+
+                if (payment.Status == "Paid")
+                    return BadRequest(new { error = "Payment is already marked as Paid." });
 
                 payment.Status = "Paid";
                 payment.PaidAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
 
-                return Ok(new { message = "Payment marked as Paid." });
+                // ---------- Send Confirmation Email ----------
+                var to = payment.Order.User.Email;
+                var subject = "Payment Confirmation - Laptop Harbour";
+                var body = $@"
+                    <h2>Payment Successful</h2>
+                    <p>Dear {payment.Order.User.Username},</p>
+                    <p>Your payment has been successfully received.</p>
+                    <hr/>
+                    <p><strong>Order ID:</strong> {payment.OrderId}</p>
+                    <p><strong>Payment ID:</strong> {payment.PaymentId}</p>
+                    <p><strong>Amount:</strong> {payment.Amount}</p>
+                    <p><strong>Status:</strong> Paid</p>
+                    <p><strong>Date:</strong> {payment.PaidAt:yyyy-MM-dd HH:mm}</p>
+                    <hr/>
+                    <p>Thank you for shopping with <b>Laptop Harbour</b>.</p>
+                ";
+
+                await _emailService.SendEmailAsync(to, subject, body);
+
+                return Ok(new
+                {
+                    message = "Payment marked as Paid and confirmation email sent successfully."
+                });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to mark payment as Paid.", details = ex.Message });
+                return StatusCode(500, new
+                {
+                    error = "Failed to mark payment as Paid or send confirmation email.",
+                    details = ex.Message
+                });
             }
         }
 

@@ -11,7 +11,7 @@ namespace Backend_Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize]
+    [Authorize] // User must be logged in for create/update/delete
     public class ProductReviewController : ControllerBase
     {
         private readonly LaptopHarbourDbContext _context;
@@ -21,7 +21,10 @@ namespace Backend_Api.Controllers
             _context = context;
         }
 
-        // ================= GET REVIEWS FOR PRODUCT WITH PAGINATION & AVG RATING =================
+        // =========================================================
+        // GET REVIEWS BY PRODUCT (Pagination + Average Rating)
+        // GET: api/ProductReview/product/{productId}
+        // =========================================================
         [HttpGet("product/{productId}")]
         [AllowAnonymous]
         public async Task<IActionResult> GetReviewsByProduct(
@@ -55,9 +58,11 @@ namespace Backend_Api.Controllers
                     })
                     .ToListAsync();
 
-                var averageRating = await _context.ProductReviews
-                    .Where(r => r.ProductId == productId)
-                    .AverageAsync(r => r.Rating ?? 0);
+                // Safe Average Rating calculation
+                var averageRating = totalReviews == 0 ? 0 :
+                    await _context.ProductReviews
+                        .Where(r => r.ProductId == productId)
+                        .AverageAsync(r => r.Rating ?? 0);
 
                 return Ok(new
                 {
@@ -71,11 +76,20 @@ namespace Backend_Api.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to fetch reviews.", details = ex.Message });
+                return StatusCode(500, new
+                {
+                    error = "Failed to fetch reviews.",
+                    details = ex.Message
+                });
             }
         }
 
-        // ================= CREATE REVIEW =================
+        // =========================================================
+        // CREATE REVIEW
+        // User must be logged in
+        // User must have purchased the product
+        // Only one review per product per user
+        // =========================================================
         [HttpPost]
         public async Task<IActionResult> CreateReview([FromBody] CreateProductReview model)
         {
@@ -90,15 +104,17 @@ namespace Backend_Api.Controllers
 
                 int userId = int.Parse(userIdClaim);
 
-                // Only allow if user purchased product
+                // Check if user purchased the product
                 bool purchased = await _context.OrderItems
                     .Include(oi => oi.Order)
-                    .AnyAsync(oi => oi.ProductId == model.ProductId && oi.Order.UserId == userId);
+                    .AnyAsync(oi =>
+                        oi.ProductId == model.ProductId &&
+                        oi.Order.UserId == userId);
 
                 if (!purchased)
                     return BadRequest(new { error = "You can only review products you have purchased." });
 
-                // Prevent duplicate review for same product
+                // Prevent duplicate review
                 bool alreadyReviewed = await _context.ProductReviews
                     .AnyAsync(r => r.ProductId == model.ProductId && r.UserId == userId);
 
@@ -130,15 +146,27 @@ namespace Backend_Api.Controllers
                     })
                     .FirstOrDefaultAsync();
 
-                return Ok(dto);
+                return Ok(new
+                {
+                    message = "Review created successfully.",
+                    data = dto
+                });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to create review.", details = ex.Message });
+                return StatusCode(500, new
+                {
+                    error = "Failed to create review.",
+                    details = ex.Message
+                });
             }
         }
 
-        // ================= UPDATE REVIEW =================
+        // =========================================================
+        // UPDATE REVIEW
+        // Only owner can update
+        // No duplicate review text for same product
+        // =========================================================
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateReview(int id, [FromBody] CreateProductReview model)
         {
@@ -156,14 +184,19 @@ namespace Backend_Api.Controllers
                 if (review == null)
                     return NotFound(new { error = "Review not found or you are not authorized." });
 
+                // Prevent duplicate review text for same product
                 bool duplicate = await _context.ProductReviews
-                    .AnyAsync(r => r.ProductId == review.ProductId
-                                   && r.UserId == userId
-                                   && r.ReviewId != review.ReviewId
-                                   && r.ReviewText == model.ReviewText);
+                    .AnyAsync(r =>
+                        r.ProductId == review.ProductId &&
+                        r.UserId == userId &&
+                        r.ReviewId != review.ReviewId &&
+                        r.ReviewText == model.ReviewText);
 
                 if (duplicate)
-                    return BadRequest(new { error = "You have already submitted a review with the same text for this product." });
+                    return BadRequest(new
+                    {
+                        error = "You have already submitted a review with the same text for this product."
+                    });
 
                 review.Rating = model.Rating;
                 review.ReviewText = model.ReviewText;
@@ -176,11 +209,18 @@ namespace Backend_Api.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to update review.", details = ex.Message });
+                return StatusCode(500, new
+                {
+                    error = "Failed to update review.",
+                    details = ex.Message
+                });
             }
         }
 
-        // ================= DELETE REVIEW =================
+        // =========================================================
+        // DELETE REVIEW
+        // Only owner can delete
+        // =========================================================
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteReview(int id)
         {
@@ -205,7 +245,11 @@ namespace Backend_Api.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to delete review.", details = ex.Message });
+                return StatusCode(500, new
+                {
+                    error = "Failed to delete review.",
+                    details = ex.Message
+                });
             }
         }
     }
