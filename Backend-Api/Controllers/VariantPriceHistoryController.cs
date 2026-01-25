@@ -24,39 +24,54 @@ namespace Backend_Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var data = await _context.VariantPriceHistories
-                .Select(vph => new VariantPriceHistoryDTO
-                {
-                    OldPrice = vph.OldPrice,
-                    NewPrice = vph.NewPrice,
-                    CreatedAt = vph.CreatedAt
-                })
-                .ToListAsync();
+            try
+            {
+                var data = await _context.VariantPriceHistories
+                    .Select(vph => new VariantPriceHistoryDTO
+                    {
+                        OldPrice = vph.OldPrice,
+                        NewPrice = vph.NewPrice,
+                        CreatedAt = vph.CreatedAt
+                    })
+                    .ToListAsync();
 
-            return Ok(data);
+                return Ok(data);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch price history records.", details = ex.Message });
+            }
         }
 
         // -------------------------------------------------------------
-        // GET: api/VariantPriceHistory/variant/5 → Price history for a variant
+        // GET: api/VariantPriceHistory/variant/{variantId} → Price history for a variant
         // -------------------------------------------------------------
         [HttpGet("variant/{variantId:int}")]
         public async Task<IActionResult> GetByVariant(int variantId)
         {
-            var exists = await _context.ProductVariants.AnyAsync(v => v.VariantId == variantId);
-            if (!exists) return NotFound("Variant not found.");
+            try
+            {
+                var variantExists = await _context.ProductVariants.AnyAsync(v => v.VariantId == variantId);
+                if (!variantExists)
+                    return NotFound(new { error = "Variant not found." });
 
-            var data = await _context.VariantPriceHistories
-                .Where(vph => vph.VariantId == variantId)
-                .OrderByDescending(vph => vph.CreatedAt)
-                .Select(vph => new VariantPriceHistoryDTO
-                {
-                    OldPrice = vph.OldPrice,
-                    NewPrice = vph.NewPrice,
-                    CreatedAt = vph.CreatedAt
-                })
-                .ToListAsync();
+                var data = await _context.VariantPriceHistories
+                    .Where(vph => vph.VariantId == variantId)
+                    .OrderByDescending(vph => vph.CreatedAt)
+                    .Select(vph => new VariantPriceHistoryDTO
+                    {
+                        OldPrice = vph.OldPrice,
+                        NewPrice = vph.NewPrice,
+                        CreatedAt = vph.CreatedAt
+                    })
+                    .ToListAsync();
 
-            return Ok(data);
+                return Ok(data);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch price history for the variant.", details = ex.Message });
+            }
         }
 
         // -------------------------------------------------------------
@@ -65,23 +80,32 @@ namespace Backend_Api.Controllers
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateVariantPriceHistory model)
         {
-            // Validate variant
-            var variantExists = await _context.ProductVariants.AnyAsync(v => v.VariantId == model.VariantId);
-            if (!variantExists)
-                return NotFound("Variant not found.");
-
-            var priceHistory = new VariantPriceHistory
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
             {
-                VariantId = model.VariantId,
-                OldPrice = model.OldPrice,
-                NewPrice = model.NewPrice,
-                CreatedAt = DateTime.UtcNow
-            };
+                var variantExists = await _context.ProductVariants.AnyAsync(v => v.VariantId == model.VariantId);
+                if (!variantExists)
+                    return NotFound(new { error = "Variant not found." });
 
-            _context.VariantPriceHistories.Add(priceHistory);
-            await _context.SaveChangesAsync();
+                var priceHistory = new VariantPriceHistory
+                {
+                    VariantId = model.VariantId,
+                    OldPrice = model.OldPrice,
+                    NewPrice = model.NewPrice,
+                    CreatedAt = DateTime.UtcNow
+                };
 
-            return Ok(new { message = "Price history added successfully." });
+                _context.VariantPriceHistories.Add(priceHistory);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new { message = "Price history added successfully.", id = priceHistory.Id });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "Failed to add price history.", details = ex.Message });
+            }
         }
 
         // -------------------------------------------------------------
@@ -90,24 +114,33 @@ namespace Backend_Api.Controllers
         [HttpPut("{id:long}")]
         public async Task<IActionResult> Update(long id, [FromBody] CreateVariantPriceHistory model)
         {
-            var priceHistory = await _context.VariantPriceHistories.FindAsync(id);
-            if (priceHistory == null)
-                return NotFound("Price history record not found.");
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var priceHistory = await _context.VariantPriceHistories.FindAsync(id);
+                if (priceHistory == null)
+                    return NotFound(new { error = "Price history record not found." });
 
-            // Validate variant
-            var variantExists = await _context.ProductVariants.AnyAsync(v => v.VariantId == model.VariantId);
-            if (!variantExists)
-                return NotFound("Variant not found.");
+                var variantExists = await _context.ProductVariants.AnyAsync(v => v.VariantId == model.VariantId);
+                if (!variantExists)
+                    return NotFound(new { error = "Variant not found." });
 
-            priceHistory.VariantId = model.VariantId;
-            priceHistory.OldPrice = model.OldPrice;
-            priceHistory.NewPrice = model.NewPrice;
-            priceHistory.CreatedAt = DateTime.UtcNow;
+                priceHistory.VariantId = model.VariantId;
+                priceHistory.OldPrice = model.OldPrice;
+                priceHistory.NewPrice = model.NewPrice;
+                priceHistory.CreatedAt = DateTime.UtcNow;
 
-            _context.VariantPriceHistories.Update(priceHistory);
-            await _context.SaveChangesAsync();
+                _context.VariantPriceHistories.Update(priceHistory);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
 
-            return Ok(new { message = "Price history updated successfully." });
+                return Ok(new { message = "Price history updated successfully." });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "Failed to update price history.", details = ex.Message });
+            }
         }
 
         // -------------------------------------------------------------
@@ -116,33 +149,53 @@ namespace Backend_Api.Controllers
         [HttpDelete("{id:long}")]
         public async Task<IActionResult> Delete(long id)
         {
-            var priceHistory = await _context.VariantPriceHistories.FindAsync(id);
-            if (priceHistory == null)
-                return NotFound("Price history record not found.");
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var priceHistory = await _context.VariantPriceHistories.FindAsync(id);
+                if (priceHistory == null)
+                    return NotFound(new { error = "Price history record not found." });
 
-            _context.VariantPriceHistories.Remove(priceHistory);
-            await _context.SaveChangesAsync();
+                _context.VariantPriceHistories.Remove(priceHistory);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
 
-            return Ok(new { message = "Price history deleted successfully." });
+                return Ok(new { message = "Price history deleted successfully." });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "Failed to delete price history.", details = ex.Message });
+            }
         }
 
         // -------------------------------------------------------------
-        // DELETE: api/VariantPriceHistory/variant/5 → Delete all price history of a variant
+        // DELETE: api/VariantPriceHistory/variant/{variantId} → Delete all price history of a variant
         // -------------------------------------------------------------
         [HttpDelete("variant/{variantId:int}")]
         public async Task<IActionResult> DeleteAllByVariant(int variantId)
         {
-            var histories = await _context.VariantPriceHistories
-                .Where(vph => vph.VariantId == variantId)
-                .ToListAsync();
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var histories = await _context.VariantPriceHistories
+                    .Where(vph => vph.VariantId == variantId)
+                    .ToListAsync();
 
-            if (histories.Count == 0)
-                return NotFound("No price history found for this variant.");
+                if (!histories.Any())
+                    return NotFound(new { error = "No price history found for this variant." });
 
-            _context.VariantPriceHistories.RemoveRange(histories);
-            await _context.SaveChangesAsync();
+                _context.VariantPriceHistories.RemoveRange(histories);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
 
-            return Ok(new { message = "All price history records for this variant deleted successfully." });
+                return Ok(new { message = "All price history records for this variant deleted successfully." });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "Failed to delete price history records for the variant.", details = ex.Message });
+            }
         }
     }
 }

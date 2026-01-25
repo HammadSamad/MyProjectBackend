@@ -24,17 +24,27 @@ namespace Backend_Api.Controllers
         [HttpGet("wishlist/{wishlistId}")]
         public async Task<IActionResult> GetItemsByWishlist(int wishlistId)
         {
-            var items = await _context.WishlistItems
-                .Where(x => x.WishlistId == wishlistId)
-                .Select(x => new WishlistItemDTO
-                {
-                    WishlistItemId = x.WishlistItemId,
-                    WishlistId = x.WishlistId,
-                    VariantId = x.VariantId
-                })
-                .ToListAsync();
+            try
+            {
+                var items = await _context.WishlistItems
+                    .Where(x => x.WishlistId == wishlistId)
+                    .Select(x => new WishlistItemDTO
+                    {
+                        WishlistItemId = x.WishlistItemId,
+                        WishlistId = x.WishlistId,
+                        VariantId = x.VariantId
+                    })
+                    .ToListAsync();
 
-            return Ok(items);
+                if (items.Count == 0)
+                    return NotFound(new { error = "No items found in this wishlist." });
+
+                return Ok(items);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to retrieve wishlist items.", details = ex.Message });
+            }
         }
 
         // ============================
@@ -44,34 +54,44 @@ namespace Backend_Api.Controllers
         [HttpPost]
         public async Task<IActionResult> AddItem(AddWishlistItemDTO model)
         {
-            // Check wishlist exists
-            var wishlist = await _context.Wishlists.FindAsync(model.WishlistId);
-            if (wishlist == null)
-                return NotFound("Wishlist not found");
+            if (model == null)
+                return BadRequest(new { error = "Request body cannot be empty." });
 
-            // Prevent duplicate product in wishlist
-            bool exists = await _context.WishlistItems
-                .AnyAsync(x => x.WishlistId == model.WishlistId && x.VariantId == model.VariantId);
-
-            if (exists)
-                return BadRequest("This product already exists in wishlist");
-
-            var item = new WishlistItem
+            try
             {
-                WishlistId = model.WishlistId,
-                VariantId = model.VariantId,
-                CreatedAt = DateTime.UtcNow
-            };
+                // Check wishlist exists
+                var wishlist = await _context.Wishlists.FindAsync(model.WishlistId);
+                if (wishlist == null)
+                    return NotFound(new { error = "Wishlist not found." });
 
-            _context.WishlistItems.Add(item);
-            await _context.SaveChangesAsync();
+                // Prevent duplicate product in wishlist
+                bool exists = await _context.WishlistItems
+                    .AnyAsync(x => x.WishlistId == model.WishlistId && x.VariantId == model.VariantId);
 
-            return Ok(new WishlistItemDTO
+                if (exists)
+                    return BadRequest(new { error = "This product already exists in the wishlist." });
+
+                var item = new WishlistItem
+                {
+                    WishlistId = model.WishlistId,
+                    VariantId = model.VariantId,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.WishlistItems.Add(item);
+                await _context.SaveChangesAsync();
+
+                return Ok(new WishlistItemDTO
+                {
+                    WishlistItemId = item.WishlistItemId,
+                    WishlistId = item.WishlistId,
+                    VariantId = item.VariantId
+                });
+            }
+            catch (Exception ex)
             {
-                WishlistItemId = item.WishlistItemId,
-                WishlistId = item.WishlistId,
-                VariantId = item.VariantId
-            });
+                return StatusCode(500, new { error = "Failed to add item to wishlist.", details = ex.Message });
+            }
         }
 
         // ============================
@@ -81,14 +101,21 @@ namespace Backend_Api.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteItem(int id)
         {
-            var item = await _context.WishlistItems.FindAsync(id);
-            if (item == null)
-                return NotFound("Wishlist item not found");
+            try
+            {
+                var item = await _context.WishlistItems.FindAsync(id);
+                if (item == null)
+                    return NotFound(new { error = "Wishlist item not found." });
 
-            _context.WishlistItems.Remove(item);
-            await _context.SaveChangesAsync();
+                _context.WishlistItems.Remove(item);
+                await _context.SaveChangesAsync();
 
-            return Ok("Item removed from wishlist");
+                return Ok(new { message = "Item removed from wishlist." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to remove item from wishlist.", details = ex.Message });
+            }
         }
 
         // ============================
@@ -98,16 +125,23 @@ namespace Backend_Api.Controllers
         [HttpDelete("wishlist/{wishlistId}/variant/{variantId}")]
         public async Task<IActionResult> DeleteByVariant(int wishlistId, int variantId)
         {
-            var item = await _context.WishlistItems
-                .FirstOrDefaultAsync(x => x.WishlistId == wishlistId && x.VariantId == variantId);
+            try
+            {
+                var item = await _context.WishlistItems
+                    .FirstOrDefaultAsync(x => x.WishlistId == wishlistId && x.VariantId == variantId);
 
-            if (item == null)
-                return NotFound("Wishlist item not found");
+                if (item == null)
+                    return NotFound(new { error = "Wishlist item not found." });
 
-            _context.WishlistItems.Remove(item);
-            await _context.SaveChangesAsync();
+                _context.WishlistItems.Remove(item);
+                await _context.SaveChangesAsync();
 
-            return Ok("Item removed from wishlist");
+                return Ok(new { message = "Item removed from wishlist." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to remove item from wishlist.", details = ex.Message });
+            }
         }
     }
 }

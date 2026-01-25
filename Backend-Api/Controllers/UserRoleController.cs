@@ -25,37 +25,48 @@ namespace Backend_Api.Controllers
         [HttpPost]
         public async Task<IActionResult> AssignRoleToUser([FromBody] CreateUserRole dto)
         {
-            // Check User exists
-            if (!await _context.Users.AnyAsync(u => u.UserId == dto.UserId))
-                return BadRequest("User does not exist.");
-
-            // Check Role exists
-            if (!await _context.Roles.AnyAsync(r => r.RoleId == dto.RoleId))
-                return BadRequest("Role does not exist.");
-
-            // Prevent duplicate role assignment
-            var exists = await _context.UserRoles.AnyAsync(ur =>
-                ur.UserId == dto.UserId && ur.RoleId == dto.RoleId);
-
-            if (exists)
-                return BadRequest("This role is already assigned to the user.");
-
-            var userRole = new UserRole
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
             {
-                UserId = dto.UserId,
-                RoleId = dto.RoleId,
-                CreatedAt = DateTime.UtcNow
-            };
+                // Check user exists and is active
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == dto.UserId);
+                if (user == null || (user.IsActive.HasValue && !user.IsActive.Value))
+                    return BadRequest(new { error = "User does not exist or is inactive." });
 
-            _context.UserRoles.Add(userRole);
-            await _context.SaveChangesAsync();
+                // Check role exists
+                if (!await _context.Roles.AnyAsync(r => r.RoleId == dto.RoleId))
+                    return BadRequest(new { error = "Role does not exist." });
 
-            return Ok(new UserRoleDTO
+                // Prevent duplicate role assignment
+                var exists = await _context.UserRoles.AnyAsync(ur =>
+                    ur.UserId == dto.UserId && ur.RoleId == dto.RoleId);
+
+                if (exists)
+                    return BadRequest(new { error = "This role is already assigned to the user." });
+
+                var userRole = new UserRole
+                {
+                    UserId = dto.UserId,
+                    RoleId = dto.RoleId,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.UserRoles.Add(userRole);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new UserRoleDTO
+                {
+                    UserId = userRole.UserId,
+                    RoleId = userRole.RoleId,
+                    CreatedAt = userRole.CreatedAt
+                });
+            }
+            catch (Exception ex)
             {
-                UserId = userRole.UserId,
-                RoleId = userRole.RoleId,
-                CreatedAt = userRole.CreatedAt
-            });
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "Failed to assign role to user.", details = ex.Message });
+            }
         }
 
         // ---------------------------------------
@@ -65,19 +76,26 @@ namespace Backend_Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAllUserRoles()
         {
-            var data = await _context.UserRoles
-                .Include(ur => ur.Role)
-                .Include(ur => ur.User)
-                .Select(ur => new UserRoleDTO
-                {
-                    UserId = ur.UserId,
-                    RoleId = ur.RoleId,
-                    RoleName = ur.Role.RoleName,
-                    CreatedAt = ur.CreatedAt
-                })
-                .ToListAsync();
+            try
+            {
+                var data = await _context.UserRoles
+                    .Include(ur => ur.Role)
+                    .Include(ur => ur.User)
+                    .Select(ur => new UserRoleDTO
+                    {
+                        UserId = ur.UserId,
+                        RoleId = ur.RoleId,
+                        RoleName = ur.Role.RoleName,
+                        CreatedAt = ur.CreatedAt
+                    })
+                    .ToListAsync();
 
-            return Ok(data);
+                return Ok(data);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch user roles.", details = ex.Message });
+            }
         }
 
         // ---------------------------------------
@@ -87,22 +105,29 @@ namespace Backend_Api.Controllers
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetRolesByUser(int userId)
         {
-            var data = await _context.UserRoles
-                .Include(ur => ur.Role)
-                .Where(ur => ur.UserId == userId)
-                .Select(ur => new UserRoleDTO
-                {
-                    UserId = ur.UserId,
-                    RoleId = ur.RoleId,
-                    RoleName = ur.Role.RoleName,
-                    CreatedAt = ur.CreatedAt
-                })
-                .ToListAsync();
+            try
+            {
+                var data = await _context.UserRoles
+                    .Include(ur => ur.Role)
+                    .Where(ur => ur.UserId == userId)
+                    .Select(ur => new UserRoleDTO
+                    {
+                        UserId = ur.UserId,
+                        RoleId = ur.RoleId,
+                        RoleName = ur.Role.RoleName,
+                        CreatedAt = ur.CreatedAt
+                    })
+                    .ToListAsync();
 
-            if (!data.Any())
-                return NotFound("No roles found for this user.");
+                if (!data.Any())
+                    return NotFound(new { error = "No roles found for this user." });
 
-            return Ok(data);
+                return Ok(data);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch roles for the user.", details = ex.Message });
+            }
         }
 
         // ---------------------------------------
@@ -112,22 +137,29 @@ namespace Backend_Api.Controllers
         [HttpGet("role/{roleId}")]
         public async Task<IActionResult> GetUsersByRole(int roleId)
         {
-            var data = await _context.UserRoles
-                .Include(ur => ur.User)
-                .Where(ur => ur.RoleId == roleId)
-                .Select(ur => new
-                {
-                    ur.UserId,
-                    ur.User.Username,
-                    ur.User.Email,
-                    ur.CreatedAt
-                })
-                .ToListAsync();
+            try
+            {
+                var data = await _context.UserRoles
+                    .Include(ur => ur.User)
+                    .Where(ur => ur.RoleId == roleId)
+                    .Select(ur => new
+                    {
+                        ur.UserId,
+                        ur.User.Username,
+                        ur.User.Email,
+                        ur.CreatedAt
+                    })
+                    .ToListAsync();
 
-            if (!data.Any())
-                return NotFound("No users found for this role.");
+                if (!data.Any())
+                    return NotFound(new { error = "No users found for this role." });
 
-            return Ok(data);
+                return Ok(data);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch users for the role.", details = ex.Message });
+            }
         }
 
         // ---------------------------------------
@@ -137,18 +169,28 @@ namespace Backend_Api.Controllers
         [HttpDelete]
         public async Task<IActionResult> RemoveRoleFromUser([FromBody] CreateUserRole dto)
         {
-            var userRole = await _context.UserRoles
-                .FirstOrDefaultAsync(ur =>
-                    ur.UserId == dto.UserId &&
-                    ur.RoleId == dto.RoleId);
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var userRole = await _context.UserRoles
+                    .FirstOrDefaultAsync(ur =>
+                        ur.UserId == dto.UserId &&
+                        ur.RoleId == dto.RoleId);
 
-            if (userRole == null)
-                return NotFound("User-Role mapping not found.");
+                if (userRole == null)
+                    return NotFound(new { error = "User-Role mapping not found." });
 
-            _context.UserRoles.Remove(userRole);
-            await _context.SaveChangesAsync();
+                _context.UserRoles.Remove(userRole);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
 
-            return Ok("Role removed from user successfully.");
+                return Ok(new { message = "Role removed from user successfully." });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "Failed to remove role from user.", details = ex.Message });
+            }
         }
 
         // ---------------------------------------
@@ -158,17 +200,27 @@ namespace Backend_Api.Controllers
         [HttpDelete("user/{userId}")]
         public async Task<IActionResult> RemoveAllRolesFromUser(int userId)
         {
-            var mappings = await _context.UserRoles
-                .Where(ur => ur.UserId == userId)
-                .ToListAsync();
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var mappings = await _context.UserRoles
+                    .Where(ur => ur.UserId == userId)
+                    .ToListAsync();
 
-            if (!mappings.Any())
-                return NotFound("No roles found for this user.");
+                if (!mappings.Any())
+                    return NotFound(new { error = "No roles found for this user." });
 
-            _context.UserRoles.RemoveRange(mappings);
-            await _context.SaveChangesAsync();
+                _context.UserRoles.RemoveRange(mappings);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
 
-            return Ok("All roles removed from user.");
+                return Ok(new { message = "All roles removed from user." });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "Failed to remove all roles from user.", details = ex.Message });
+            }
         }
     }
 }

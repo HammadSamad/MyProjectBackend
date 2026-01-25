@@ -1,12 +1,7 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "D:\\Projects\\MyProjectBackend\\Backend-Api\\",
-  "Documents": [
-    {
-      "AbsoluteMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|d:\\projects\\myprojectbackend\\backend-api\\controllers\\shipmentcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|solutionrelative:controllers\\shipmentcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    }
-  ],
+  "Documents": [],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
@@ -14,21 +9,8 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 0,
+          "SelectedChildIndex": -1,
           "Children": [
-            {
-              "$type": "Document",
-              "DocumentIndex": 0,
-              "Title": "ShipmentController.cs",
-              "DocumentMoniker": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Controllers\\ShipmentController.cs",
-              "RelativeDocumentMoniker": "Controllers\\ShipmentController.cs",
-              "ToolTip": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Controllers\\ShipmentController.cs",
-              "RelativeToolTip": "Controllers\\ShipmentController.cs",
-              "ViewState": "AgIAABUAAAAAAAAAAAAtwCsAAAAvAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-01-25T09:58:05.764Z",
-              "EditorCaption": ""
-            },
             {
               "$type": "Bookmark",
               "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"

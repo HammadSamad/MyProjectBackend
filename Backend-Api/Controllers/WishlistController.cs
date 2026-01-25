@@ -25,30 +25,37 @@ namespace Backend_Api.Controllers
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetUserWishlist(int userId)
         {
-            var wishlist = await _context.Wishlists
-                .Include(w => w.WishlistItems)
-                .ThenInclude(wi => wi.Variant)
-                .FirstOrDefaultAsync(w => w.UserId == userId);
-
-            if (wishlist == null)
+            try
             {
-                wishlist = new Wishlist
+                var wishlist = await _context.Wishlists
+                    .Include(w => w.WishlistItems)
+                    .ThenInclude(wi => wi.Variant)
+                    .FirstOrDefaultAsync(w => w.UserId == userId);
+
+                if (wishlist == null)
                 {
-                    UserId = userId,
-                    CreatedAt = DateTime.UtcNow
+                    wishlist = new Wishlist
+                    {
+                        UserId = userId,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    _context.Wishlists.Add(wishlist);
+                    await _context.SaveChangesAsync();
+                }
+
+                var result = new WishlistDTO
+                {
+                    WishlistId = wishlist.WishlistId,
+                    UserId = wishlist.UserId ?? 0
                 };
 
-                _context.Wishlists.Add(wishlist);
-                await _context.SaveChangesAsync();
+                return Ok(result);
             }
-
-            var result = new WishlistDTO
+            catch (Exception ex)
             {
-                WishlistId = wishlist.WishlistId,
-                UserId = wishlist.UserId ?? 0
-            };
-
-            return Ok(result);
+                return StatusCode(500, new { error = "Failed to retrieve user's wishlist.", details = ex.Message });
+            }
         }
 
         // ============================
@@ -58,24 +65,34 @@ namespace Backend_Api.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateWishlist(CreateWishlist model)
         {
-            var exists = await _context.Wishlists.AnyAsync(w => w.UserId == model.UserId);
-            if (exists)
-                return BadRequest("Wishlist already exists for this user.");
+            if (model == null)
+                return BadRequest(new { error = "Request body cannot be empty." });
 
-            var wishlist = new Wishlist
+            try
             {
-                UserId = model.UserId,
-                CreatedAt = DateTime.UtcNow
-            };
+                var exists = await _context.Wishlists.AnyAsync(w => w.UserId == model.UserId);
+                if (exists)
+                    return BadRequest(new { error = "Wishlist already exists for this user." });
 
-            _context.Wishlists.Add(wishlist);
-            await _context.SaveChangesAsync();
+                var wishlist = new Wishlist
+                {
+                    UserId = model.UserId,
+                    CreatedAt = DateTime.UtcNow
+                };
 
-            return Ok(new WishlistDTO
+                _context.Wishlists.Add(wishlist);
+                await _context.SaveChangesAsync();
+
+                return Ok(new WishlistDTO
+                {
+                    WishlistId = wishlist.WishlistId,
+                    UserId = wishlist.UserId ?? 0
+                });
+            }
+            catch (Exception ex)
             {
-                WishlistId = wishlist.WishlistId,
-                UserId = wishlist.UserId ?? 0
-            });
+                return StatusCode(500, new { error = "Failed to create wishlist.", details = ex.Message });
+            }
         }
 
         // ============================
@@ -84,16 +101,23 @@ namespace Backend_Api.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetWishlistById(int id)
         {
-            var wishlist = await _context.Wishlists.FindAsync(id);
-
-            if (wishlist == null)
-                return NotFound("Wishlist not found");
-
-            return Ok(new WishlistDTO
+            try
             {
-                WishlistId = wishlist.WishlistId,
-                UserId = wishlist.UserId ?? 0
-            });
+                var wishlist = await _context.Wishlists.FindAsync(id);
+
+                if (wishlist == null)
+                    return NotFound(new { error = "Wishlist not found." });
+
+                return Ok(new WishlistDTO
+                {
+                    WishlistId = wishlist.WishlistId,
+                    UserId = wishlist.UserId ?? 0
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to retrieve wishlist.", details = ex.Message });
+            }
         }
 
         // ============================
@@ -103,18 +127,25 @@ namespace Backend_Api.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteWishlist(int id)
         {
-            var wishlist = await _context.Wishlists
-                .Include(w => w.WishlistItems)
-                .FirstOrDefaultAsync(w => w.WishlistId == id);
+            try
+            {
+                var wishlist = await _context.Wishlists
+                    .Include(w => w.WishlistItems)
+                    .FirstOrDefaultAsync(w => w.WishlistId == id);
 
-            if (wishlist == null)
-                return NotFound("Wishlist not found");
+                if (wishlist == null)
+                    return NotFound(new { error = "Wishlist not found." });
 
-            _context.WishlistItems.RemoveRange(wishlist.WishlistItems);
-            _context.Wishlists.Remove(wishlist);
+                _context.WishlistItems.RemoveRange(wishlist.WishlistItems);
+                _context.Wishlists.Remove(wishlist);
 
-            await _context.SaveChangesAsync();
-            return Ok("Wishlist deleted successfully");
+                await _context.SaveChangesAsync();
+                return Ok(new { message = "Wishlist deleted successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to delete wishlist.", details = ex.Message });
+            }
         }
     }
 }
