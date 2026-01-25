@@ -36,5 +36,4 @@ public partial class Product
     public virtual ICollection<ProductVariant> ProductVariants { get; set; } = new List<ProductVariant>();
 
     public virtual ICollection<ProductView> ProductViews { get; set; } = new List<ProductView>();
-    public object? OrderItems { get; set; }
 }

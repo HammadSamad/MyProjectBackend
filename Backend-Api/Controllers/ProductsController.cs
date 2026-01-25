@@ -1,7 +1,7 @@
 ﻿using Backend_Api.Data;
 using Backend_Api.Models;
-using Backend_Api.Models.Model_DTO;
 using Backend_Api.Models.Model_Create;
+using Backend_Api.Models.Model_DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -25,15 +25,16 @@ namespace Backend_Api.Controllers
         // =========================================================
         [HttpGet]
         public async Task<IActionResult> GetProducts(
-            string? search = null,
-            int? categoryId = null,
-            int? brandId = null,
-            decimal? minPrice = null,
-            decimal? maxPrice = null,
-            string? specs = null,
-            string? sort = null,
-            int page = 1,
-            int pageSize = 12)
+    string? search = null,
+    int? categoryId = null,
+    int? brandId = null,
+    decimal? minPrice = null,
+    decimal? maxPrice = null,
+    string? specs = null,
+    string? sort = null,
+    bool? discountedOnly = null, // <-- NEW PARAMETER
+    int page = 1,
+    int pageSize = 12)
         {
             try
             {
@@ -52,6 +53,7 @@ namespace Backend_Api.Controllers
                         .ThenInclude(psv => psv.Specification)
                     .Include(p => p.ProductSpecificationValues)
                         .ThenInclude(psv => psv.Option)
+                    .Include(p => p.ProductReviews)
                     .AsQueryable();
 
                 // 🔍 SEARCH
@@ -73,10 +75,21 @@ namespace Backend_Api.Controllers
 
                 // 💰 PRICE FILTER
                 if (minPrice.HasValue)
-                    query = query.Where(p => p.ProductVariants.Any(v => v.Price >= minPrice.Value));
+                    query = query.Where(p => p.ProductVariants.Any(v => CalculateFinalPrice(v) >= minPrice.Value));
 
                 if (maxPrice.HasValue)
-                    query = query.Where(p => p.ProductVariants.Any(v => v.Price <= maxPrice.Value));
+                    query = query.Where(p => p.ProductVariants.Any(v => CalculateFinalPrice(v) <= maxPrice.Value));
+
+                // 💸 DISCOUNTED ONLY FILTER
+                if (discountedOnly.HasValue && discountedOnly.Value)
+                {
+                    var now = DateTime.UtcNow;
+                    query = query.Where(p => p.ProductVariants.Any(v =>
+                        (v.DiscountPercentage.HasValue && v.DiscountPercentage.Value > 0 || v.DiscountAmount.HasValue && v.DiscountAmount.Value > 0) &&
+                        (!v.DiscountStart.HasValue || v.DiscountStart <= now) &&
+                        (!v.DiscountEnd.HasValue || v.DiscountEnd >= now)
+                    ));
+                }
 
                 // 🧠 SPECIFICATION FILTER
                 if (!string.IsNullOrWhiteSpace(specs))
@@ -94,12 +107,10 @@ namespace Backend_Api.Controllers
                         query = query.Where(p =>
                             p.ProductSpecificationValues.Any(psv =>
                                 psv.Specification.SpecificationName == specName &&
-                                (
-                                    (psv.ValueText != null && psv.ValueText == specValue) ||
-                                    (psv.Option != null && psv.Option.OptionValue == specValue)
-                                ))
-                            ||
-                            p.ProductVariants.Any(v =>
+                                ((psv.ValueText != null && psv.ValueText == specValue) ||
+                                 (psv.Option != null && psv.Option.OptionValue == specValue))
+                            )
+                            || p.ProductVariants.Any(v =>
                                 v.VariantSpecificationOptions.Any(vso =>
                                     vso.Option != null &&
                                     vso.Option.Specification.SpecificationName == specName &&
@@ -112,8 +123,8 @@ namespace Backend_Api.Controllers
                 // ↕ SORTING
                 query = sort switch
                 {
-                    "price_asc" => query.OrderBy(p => p.ProductVariants.Min(v => v.Price)),
-                    "price_desc" => query.OrderByDescending(p => p.ProductVariants.Max(v => v.Price)),
+                    "price_asc" => query.OrderBy(p => p.ProductVariants.Min(v => CalculateFinalPrice(v))),
+                    "price_desc" => query.OrderByDescending(p => p.ProductVariants.Max(v => CalculateFinalPrice(v))),
                     "newest" => query.OrderByDescending(p => p.CreatedAt),
                     "name" => query.OrderBy(p => p.ProductName),
                     _ => query.OrderByDescending(p => p.CreatedAt)
@@ -148,6 +159,7 @@ namespace Backend_Api.Controllers
             }
         }
 
+
         // =========================================================
         // GET PRODUCT BY ID
         // =========================================================
@@ -168,6 +180,7 @@ namespace Backend_Api.Controllers
                         .ThenInclude(psv => psv.Specification)
                     .Include(p => p.ProductSpecificationValues)
                         .ThenInclude(psv => psv.Option)
+                    .Include(p => p.ProductReviews)
                     .FirstOrDefaultAsync(p => p.ProductId == id);
 
                 if (product == null)
@@ -275,13 +288,14 @@ namespace Backend_Api.Controllers
                 var product = await _context.Products
                     .Include(p => p.ProductImages)
                     .Include(p => p.ProductVariants)
-                    .Include(p => p.OrderItems) // Ensure this is included
+                        .ThenInclude(v => v.OrderItems)
                     .FirstOrDefaultAsync(p => p.ProductId == id);
 
                 if (product == null)
                     return NotFound(new { error = "Product not found." });
 
-                if (product.OrderItems is IEnumerable<object> orderItems && orderItems.Any())
+                bool hasOrders = product.ProductVariants.Any(v => v.OrderItems.Any());
+                if (hasOrders)
                     return BadRequest(new { error = "Cannot delete this product because it has associated orders." });
 
                 // Delete images from disk
@@ -314,7 +328,7 @@ namespace Backend_Api.Controllers
         }
 
         // =========================================================
-        // DTO MAPPING
+        // DTO MAPPING WITH AverageRating & FinalPrice
         // =========================================================
         private List<ProductDTO> MapToDTO(List<Product> products)
         {
@@ -330,20 +344,20 @@ namespace Backend_Api.Controllers
                 BrandName = p.Brand?.BrandName,
                 CategoryName = p.Category?.CategoryName,
 
-                CoverImage = p.ProductImages
-                    .FirstOrDefault(i => i.IsCover == true)?.ImageUrl,
-
-                GalleryImages = p.ProductImages
-                    .Where(i => i.IsCover != true)
-                    .Select(i => i.ImageUrl!)
-                    .ToList(),
+                CoverImage = p.ProductImages.FirstOrDefault(i => i.IsCover == true)?.ImageUrl,
+                GalleryImages = p.ProductImages.Where(i => i.IsCover != true).Select(i => i.ImageUrl!).ToList(),
 
                 Variants = p.ProductVariants.Select(v => new ProductVariantDTO
                 {
                     VariantId = v.VariantId,
                     Sku = v.Sku,
                     Price = v.Price,
+                    FinalPrice = CalculateFinalPrice(v),
                     Stock = v.Stock,
+                    DiscountPercentage = v.DiscountPercentage,
+                    DiscountAmount = v.DiscountAmount,
+                    DiscountStart = v.DiscountStart,
+                    DiscountEnd = v.DiscountEnd,
                     Specifications = v.VariantSpecificationOptions
                         .Where(vso => vso.Option != null)
                         .Select(vso => new VariantSpecificationOptionDTO
@@ -361,9 +375,37 @@ namespace Backend_Api.Controllers
                     ValueNumber = psv.ValueNumber,
                     ValueBool = psv.ValueBool ?? false,
                     OptionValue = psv.Option?.OptionValue
-                }).ToList()
+                }).ToList(),
 
+                AverageRating = p.ProductReviews.Any()
+                    ? Math.Round(p.ProductReviews.Average(r => r.Rating ?? 0), 1)
+                    : 0
             }).ToList();
+        }
+
+        // =========================================================
+        // Helper → Calculate Final Price considering discount
+        // =========================================================
+        private decimal CalculateFinalPrice(ProductVariant v)
+        {
+            decimal price = v.Price ?? 0;
+
+            // Check discount date validity
+            if (v.DiscountStart.HasValue && v.DiscountEnd.HasValue)
+            {
+                var now = DateTime.UtcNow;
+                if (now < v.DiscountStart || now > v.DiscountEnd) return price;
+            }
+
+            // Apply percentage
+            if (v.DiscountPercentage.HasValue)
+                price -= price * (v.DiscountPercentage.Value / 100);
+
+            // Apply fixed discount
+            if (v.DiscountAmount.HasValue)
+                price -= v.DiscountAmount.Value;
+
+            return price >= 0 ? price : 0;
         }
     }
 }

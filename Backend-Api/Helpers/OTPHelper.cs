@@ -1,16 +1,28 @@
-﻿namespace Backend_Api.Helpers
+﻿using System;
+using System.Security.Cryptography;
+using System.Text;
+
+namespace Backend_Api.Helpers
 {
-    public class OTPHelper
+    public static class OTPHelper
     {
-        public static string GenerateOTP(int length = 6)
+        // Generate numeric OTP
+        public static string GenerateOTP(int length = 4)
         {
-            var random = new Random();
-            string otp = "";
-            for (int i = 0; i < length; i++)
+            if (length <= 0) length = 4;
+
+            var otp = new StringBuilder();
+            using (var rng = RandomNumberGenerator.Create())
             {
-                otp += random.Next(0, 10).ToString();
+                for (int i = 0; i < length; i++)
+                {
+                    byte[] randomNumber = new byte[1];
+                    rng.GetBytes(randomNumber);
+                    int digit = randomNumber[0] % 10; // 0-9
+                    otp.Append(digit);
+                }
             }
-            return otp;
+            return otp.ToString();
         }
     }
 }

@@ -71,6 +71,13 @@ namespace Backend_Api.Controllers
                     CreatedAt = DateTime.UtcNow
                 });
 
+                // Invalidate old OTPs for this user
+                var oldOtps = await _context.UserVerifications
+                    .Where(v => v.UserId == user.UserId && v.Channel == "email" && !(v.IsUsed ?? false))
+                    .ToListAsync();
+                foreach (var o in oldOtps) o.IsUsed = true;
+
+                // Generate OTP for email verification
                 string otp = OTPHelper.GenerateOTP();
                 _context.UserVerifications.Add(new UserVerification
                 {
@@ -85,7 +92,11 @@ namespace Backend_Api.Controllers
                 await _context.SaveChangesAsync();
                 await _emailService.SendEmailAsync(user.Email, "Verify your account", $"Your OTP is: {otp}");
 
-                return Ok(new { message = "User registered successfully. Verification OTP sent to email." });
+                return Ok(new
+                {
+                    message = "User registered successfully. Verification OTP sent to email.",
+                    userId = user.UserId
+                });
             }
             catch (Exception ex)
             {
@@ -109,18 +120,43 @@ namespace Backend_Api.Controllers
                     .FirstOrDefaultAsync(u =>
                         u.Username == dto.UsernameOrEmail || u.Email == dto.UsernameOrEmail);
 
-                if (user == null)
+                if (user == null || !_passwordHasher.VerifyPassword(user.PasswordHash, dto.Password))
                     return Unauthorized(new { message = "Invalid username/email or password." });
 
-                if (!_passwordHasher.VerifyPassword(user.PasswordHash, dto.Password))
-                    return Unauthorized(new { message = "Invalid username/email or password." });
-
-                if (user.IsActive == false)
+                if (user.IsActive != true)
                     return BadRequest(new { message = "User account is inactive." });
 
-                if (user.IsEmailVerified == false)
-                    return BadRequest(new { message = "Email not verified. Please verify your email first." });
+                // Email not verified → resend OTP
+                if (user.IsEmailVerified != true)
+                {
+                    // Invalidate old OTPs
+                    var oldOtps = await _context.UserVerifications
+                        .Where(v => v.UserId == user.UserId && v.Channel == "email" && !(v.IsUsed ?? false))
+                        .ToListAsync();
+                    foreach (var o in oldOtps) o.IsUsed = true;
 
+                    string otp = OTPHelper.GenerateOTP();
+                    _context.UserVerifications.Add(new UserVerification
+                    {
+                        UserId = user.UserId,
+                        Channel = "email",
+                        Code = otp,
+                        ExpiresAt = DateTime.UtcNow.AddMinutes(5),
+                        IsUsed = false,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    await _context.SaveChangesAsync();
+                    await _emailService.SendEmailAsync(user.Email, "Verify your account", $"Your OTP is: {otp}");
+
+                    return BadRequest(new
+                    {
+                        message = "Email not verified. A new OTP has been sent to your email.",
+                        userId = user.UserId
+                    });
+                }
+
+                // Continue login
                 var roles = user.UserRoles.Select(ur => ur.Role.RoleName).ToList();
                 var jwt = _jwtService.GenerateToken(user.UserId, user.Username, user.Email, roles);
 
@@ -147,101 +183,13 @@ namespace Backend_Api.Controllers
                 return Ok(new
                 {
                     message = "Login successful.",
-                    token = jwt
+                    token = jwt,
+                    userId = user.UserId
                 });
             }
             catch (Exception ex)
             {
                 return StatusCode(500, new { message = "Error occurred during login.", error = ex.Message });
-            }
-        }
-
-        // -----------------------------
-        // Refresh Token
-        // -----------------------------
-        [HttpPost("refresh-token")]
-        public async Task<IActionResult> RefreshToken()
-        {
-            try
-            {
-                if (!Request.Cookies.TryGetValue("refreshToken", out var token))
-                    return Unauthorized(new { message = "Refresh token missing." });
-
-                var refreshToken = await _context.RefreshTokens
-                    .Include(rt => rt.User)
-                        .ThenInclude(u => u.UserRoles)
-                            .ThenInclude(ur => ur.Role)
-                    .FirstOrDefaultAsync(rt =>
-                        rt.Token == token &&
-                        !rt.IsRevoked &&
-                        rt.ExpiresAt > DateTime.UtcNow);
-
-                if (refreshToken == null)
-                    return Unauthorized(new { message = "Invalid or expired refresh token." });
-
-                refreshToken.IsRevoked = true;
-
-                var user = refreshToken.User;
-                var roles = user.UserRoles.Select(ur => ur.Role.RoleName).ToList();
-                var jwt = _jwtService.GenerateToken(user.UserId, user.Username, user.Email, roles);
-
-                var newRefreshToken = new RefreshToken
-                {
-                    UserId = user.UserId,
-                    Token = Guid.NewGuid().ToString(),
-                    ExpiresAt = DateTime.UtcNow.AddDays(7),
-                    IsRevoked = false,
-                    CreatedAt = DateTime.UtcNow
-                };
-
-                _context.RefreshTokens.Add(newRefreshToken);
-                await _context.SaveChangesAsync();
-
-                Response.Cookies.Append("refreshToken", newRefreshToken.Token, new CookieOptions
-                {
-                    HttpOnly = true,
-                    Secure = true,
-                    SameSite = SameSiteMode.Strict,
-                    Expires = newRefreshToken.ExpiresAt
-                });
-
-                return Ok(new
-                {
-                    message = "Token refreshed successfully.",
-                    token = jwt
-                });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Error occurred while refreshing token.", error = ex.Message });
-            }
-        }
-
-        // -----------------------------
-        // Logout
-        // -----------------------------
-        [HttpPost("logout")]
-        public async Task<IActionResult> Logout()
-        {
-            try
-            {
-                if (Request.Cookies.TryGetValue("refreshToken", out var token))
-                {
-                    var refreshToken = await _context.RefreshTokens.FirstOrDefaultAsync(rt => rt.Token == token);
-                    if (refreshToken != null)
-                    {
-                        refreshToken.IsRevoked = true;
-                        await _context.SaveChangesAsync();
-                    }
-
-                    Response.Cookies.Delete("refreshToken");
-                }
-
-                return Ok(new { message = "Logged out successfully." });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Error occurred during logout.", error = ex.Message });
             }
         }
 
@@ -254,7 +202,7 @@ namespace Backend_Api.Controllers
             try
             {
                 var verification = await _context.UserVerifications
-                    .Where(v => v.UserId == dto.UserId && v.Channel == "email" && v.IsUsed != true)
+                    .Where(v => v.UserId == dto.UserId && v.Channel == "email" && !(v.IsUsed ?? false))
                     .OrderByDescending(v => v.CreatedAt)
                     .FirstOrDefaultAsync();
 
@@ -274,11 +222,55 @@ namespace Backend_Api.Controllers
 
                 await _context.SaveChangesAsync();
 
-                return Ok(new { message = "Email verified successfully." });
+                return Ok(new { message = "Email verified successfully.", userId = user!.UserId });
             }
             catch (Exception ex)
             {
                 return StatusCode(500, new { message = "Error occurred during email verification.", error = ex.Message });
+            }
+        }
+
+        // -----------------------------
+        // Resend OTP
+        // -----------------------------
+        [HttpPost("resend-otp")]
+        public async Task<IActionResult> ResendOtp([FromBody] ResendOtpDTO dto)
+        {
+            try
+            {
+                var user = await _context.Users.FindAsync(dto.UserId);
+                if (user == null)
+                    return NotFound(new { message = "User not found." });
+
+                if (user.IsEmailVerified == true)
+                    return BadRequest(new { message = "Email is already verified." });
+
+                // Invalidate old OTPs
+                var oldOtps = await _context.UserVerifications
+                    .Where(v => v.UserId == dto.UserId && v.Channel == "email" && !(v.IsUsed ?? false))
+                    .ToListAsync();
+                foreach (var o in oldOtps) o.IsUsed = true;
+
+                // Generate new OTP
+                string otp = OTPHelper.GenerateOTP();
+                _context.UserVerifications.Add(new UserVerification
+                {
+                    UserId = dto.UserId,
+                    Channel = "email",
+                    Code = otp,
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(5),
+                    IsUsed = false,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                await _context.SaveChangesAsync();
+                await _emailService.SendEmailAsync(user.Email, "Resend OTP", $"Your new OTP is: {otp}");
+
+                return Ok(new { message = "OTP resent successfully.", userId = user.UserId });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error occurred while resending OTP.", error = ex.Message });
             }
         }
 
@@ -296,6 +288,12 @@ namespace Backend_Api.Controllers
                 var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == dto.Email);
                 if (user == null)
                     return BadRequest(new { message = "Email not found." });
+
+                // Invalidate old password reset tokens
+                var oldTokens = await _context.PasswordResetTokens
+                    .Where(t => t.UserId == user.UserId && !(t.IsUsed ?? false) && t.ExpiresAt > DateTime.UtcNow)
+                    .ToListAsync();
+                foreach (var t in oldTokens) t.IsUsed = true;
 
                 string token = Guid.NewGuid().ToString();
                 _context.PasswordResetTokens.Add(new PasswordResetToken
@@ -332,7 +330,7 @@ namespace Backend_Api.Controllers
                 var reset = await _context.PasswordResetTokens
                     .FirstOrDefaultAsync(r =>
                         r.ResetToken == dto.Token &&
-                        r.IsUsed != true &&
+                        !(r.IsUsed ?? false) &&
                         r.ExpiresAt > DateTime.UtcNow);
 
                 if (reset == null)
@@ -346,11 +344,96 @@ namespace Backend_Api.Controllers
                 reset.IsUsed = true;
 
                 await _context.SaveChangesAsync();
-                return Ok(new { message = "Password has been reset successfully." });
+                return Ok(new { message = "Password has been reset successfully.", userId = user.UserId });
             }
             catch (Exception ex)
             {
                 return StatusCode(500, new { message = "Error occurred while resetting password.", error = ex.Message });
+            }
+        }
+
+        // -----------------------------
+        // Refresh Token
+        // -----------------------------
+        [HttpPost("refresh-token")]
+        public async Task<IActionResult> RefreshToken()
+        {
+            try
+            {
+                if (!Request.Cookies.TryGetValue("refreshToken", out var token))
+                    return Unauthorized(new { message = "Refresh token missing." });
+
+                var refreshToken = await _context.RefreshTokens
+                    .Include(rt => rt.User)
+                        .ThenInclude(u => u.UserRoles)
+                            .ThenInclude(ur => ur.Role)
+                    .FirstOrDefaultAsync(rt =>
+                        rt.Token == token &&
+                        rt.IsRevoked == false &&
+                        rt.ExpiresAt > DateTime.UtcNow);
+
+                if (refreshToken == null)
+                    return Unauthorized(new { message = "Invalid or expired refresh token." });
+
+                refreshToken.IsRevoked = true;
+
+                var user = refreshToken.User;
+                var roles = user.UserRoles.Select(ur => ur.Role.RoleName).ToList();
+                var jwt = _jwtService.GenerateToken(user.UserId, user.Username, user.Email, roles);
+
+                var newRefreshToken = new RefreshToken
+                {
+                    UserId = user.UserId,
+                    Token = Guid.NewGuid().ToString(),
+                    ExpiresAt = DateTime.UtcNow.AddDays(7),
+                    IsRevoked = false,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.RefreshTokens.Add(newRefreshToken);
+                await _context.SaveChangesAsync();
+
+                Response.Cookies.Append("refreshToken", newRefreshToken.Token, new CookieOptions
+                {
+                    HttpOnly = true,
+                    Secure = true,
+                    SameSite = SameSiteMode.Strict,
+                    Expires = newRefreshToken.ExpiresAt
+                });
+
+                return Ok(new { message = "Token refreshed successfully.", token = jwt, userId = user.UserId });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error occurred while refreshing token.", error = ex.Message });
+            }
+        }
+
+        // -----------------------------
+        // Logout
+        // -----------------------------
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout()
+        {
+            try
+            {
+                if (Request.Cookies.TryGetValue("refreshToken", out var token))
+                {
+                    var refreshToken = await _context.RefreshTokens.FirstOrDefaultAsync(rt => rt.Token == token);
+                    if (refreshToken != null)
+                    {
+                        refreshToken.IsRevoked = true;
+                        await _context.SaveChangesAsync();
+                    }
+
+                    Response.Cookies.Delete("refreshToken");
+                }
+
+                return Ok(new { message = "Logged out successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error occurred during logout.", error = ex.Message });
             }
         }
 
@@ -382,11 +465,7 @@ namespace Backend_Api.Controllers
                     CreatedAt = user.CreatedAt
                 };
 
-                return Ok(new
-                {
-                    message = "User profile fetched successfully.",
-                    data = dto
-                });
+                return Ok(new { message = "User profile fetched successfully.", data = dto });
             }
             catch (Exception ex)
             {

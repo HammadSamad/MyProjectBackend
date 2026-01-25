@@ -18,6 +18,8 @@ namespace Backend_Api.Models
 
         public List<ProductVariantDTO> Variants { get; set; } = new();
         public List<ProductSpecificationDTO> Specifications { get; set; } = new();
+
+        public double AverageRating { get; set; }
         public DateTime? CreatedAt { get; internal set; }
         public DateTime? UpdatedAt { get; internal set; }
     }

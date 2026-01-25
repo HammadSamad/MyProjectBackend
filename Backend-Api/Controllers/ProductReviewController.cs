@@ -104,11 +104,12 @@ namespace Backend_Api.Controllers
 
                 int userId = int.Parse(userIdClaim);
 
-                // Check if user purchased the product
+                // --- CHECK IF USER PURCHASED THE PRODUCT ---
                 bool purchased = await _context.OrderItems
                     .Include(oi => oi.Order)
+                    .Include(oi => oi.Variant) // Include variant to access ProductId
                     .AnyAsync(oi =>
-                        oi.ProductId == model.ProductId &&
+                        oi.Variant.ProductId == model.ProductId && // Access through variant
                         oi.Order.UserId == userId);
 
                 if (!purchased)

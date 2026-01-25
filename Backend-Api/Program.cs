@@ -27,6 +27,8 @@ builder.Services.AddScoped<JwtTokenService>();
 builder.Services.AddScoped<PasswordHasherHelper>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddHostedService<OrderAutoCancelService>();
+builder.Services.AddHostedService<ExpiredTokenCleanupService>();
+
 
 // -----------------------------
 // JWT Authentication

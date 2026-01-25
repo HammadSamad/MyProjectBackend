@@ -9,7 +9,7 @@ public partial class City
 
     public int CountryId { get; set; }
 
-    public string CityName { get; set; } = null!;
+    public string? CityName { get; set; }
 
     public DateTime? CreatedAt { get; set; }
 

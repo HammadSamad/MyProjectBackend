@@ -200,7 +200,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Variant).WithMany(p => p.CartItems)
                 .HasForeignKey(d => d.VariantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__cart_item__varia__1CBC4616");
+                .HasConstraintName("FK__cart_item__varia__184C96B4");
         });
 
         modelBuilder.Entity<Category>(entity =>
@@ -483,7 +483,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Variant).WithMany(p => p.OrderItems)
                 .HasForeignKey(d => d.VariantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__order_ite__varia__339FAB6E");
+                .HasConstraintName("FK__order_ite__varia__1A34DF26");
         });
 
         modelBuilder.Entity<PasswordResetToken>(entity =>
@@ -562,12 +562,12 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
                 .HasColumnName("created_at");
-            entity.Property(e => e.UpdatedAt)
-                .HasDefaultValueSql("(sysutcdatetime())")
-                .HasColumnName("updated_at");
             entity.Property(e => e.MethodName)
                 .HasMaxLength(50)
                 .HasColumnName("method_name");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnName("updated_at");
         });
 
         modelBuilder.Entity<Permission>(entity =>
@@ -714,7 +714,7 @@ public partial class LaptopHarbourDbContext : DbContext
 
         modelBuilder.Entity<ProductVariant>(entity =>
         {
-            entity.HasKey(e => e.VariantId).HasName("PK__product___EACC68B7E4D2F74C");
+            entity.HasKey(e => e.VariantId).HasName("PK__tmp_ms_x__EACC68B7FFF3CDF1");
 
             entity.ToTable("product_variants", tb =>
                 {
@@ -723,12 +723,22 @@ public partial class LaptopHarbourDbContext : DbContext
                     tb.HasTrigger("trg_UpdateUpdatedAt_ProductVariants");
                 });
 
-            entity.HasIndex(e => e.Sku, "UQ__product___DDDF4BE7DF3F2180").IsUnique();
+            entity.HasIndex(e => e.Sku, "UQ__tmp_ms_x__DDDF4BE71FE219C8").IsUnique();
+
+            entity.HasIndex(e => e.Sku, "UQ__tmp_ms_x__DDDF4BE7F114AB11").IsUnique();
 
             entity.Property(e => e.VariantId).HasColumnName("variant_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
                 .HasColumnName("created_at");
+            entity.Property(e => e.DiscountAmount)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("discount_amount");
+            entity.Property(e => e.DiscountEnd).HasColumnName("discount_end");
+            entity.Property(e => e.DiscountPercentage)
+                .HasColumnType("decimal(5, 2)")
+                .HasColumnName("discount_percentage");
+            entity.Property(e => e.DiscountStart).HasColumnName("discount_start");
             entity.Property(e => e.Price)
                 .HasColumnType("decimal(18, 2)")
                 .HasColumnName("price");
@@ -742,7 +752,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Product).WithMany(p => p.ProductVariants)
                 .HasForeignKey(d => d.ProductId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__product_v__produ__0E6E26BF");
+                .HasConstraintName("FK__product_v__produ__16644E42");
         });
 
         modelBuilder.Entity<ProductView>(entity =>
@@ -1152,7 +1162,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Variant).WithMany(p => p.VariantPriceHistories)
                 .HasForeignKey(d => d.VariantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__variant_p__varia__40F9A68C");
+                .HasConstraintName("FK__variant_p__varia__1B29035F");
         });
 
         modelBuilder.Entity<VariantSpecificationOption>(entity =>
@@ -1175,7 +1185,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Variant).WithMany(p => p.VariantSpecificationOptions)
                 .HasForeignKey(d => d.VariantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__variant_s__varia__123EB7A3");
+                .HasConstraintName("FK__variant_s__varia__1758727B");
         });
 
         modelBuilder.Entity<Wishlist>(entity =>
@@ -1213,7 +1223,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Variant).WithMany(p => p.WishlistItems)
                 .HasForeignKey(d => d.VariantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__wishlist___varia__2645B050");
+                .HasConstraintName("FK__wishlist___varia__1940BAED");
 
             entity.HasOne(d => d.Wishlist).WithMany(p => p.WishlistItems)
                 .HasForeignKey(d => d.WishlistId)
