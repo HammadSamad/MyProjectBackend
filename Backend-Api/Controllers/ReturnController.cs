@@ -2,6 +2,7 @@
 using Backend_Api.Models;
 using Backend_Api.Models.Model_Create;
 using Backend_Api.Models.Model_DTO;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -14,119 +15,235 @@ namespace Backend_Api.Controllers
     {
         private readonly LaptopHarbourDbContext _context;
 
+        // Allowed statuses for returns
+        private readonly string[] allowedStatuses = new[] { "Pending", "Approved", "Rejected", "Completed" };
+
         public ReturnController(LaptopHarbourDbContext context)
         {
             _context = context;
         }
 
         // ================= CREATE RETURN =================
-        // POST: api/Return
         [HttpPost]
+        [Authorize(Roles = "Admin,Finance")]
         public async Task<IActionResult> CreateReturn([FromBody] CreateReturn model)
         {
-            var order = await _context.Orders.FindAsync(model.OrderId);
-            if (order == null)
-                return NotFound("Order not found.");
+            if (model == null)
+                return BadRequest(new { error = "Invalid request payload" });
 
-            var newReturn = new Return
+            using var transaction = await _context.Database.BeginTransactionAsync();
+
+            try
             {
-                OrderId = model.OrderId,
-                UserId = order.UserId,
-                Reason = model.Reason,
-                Status = "Pending",
-                CreatedAt = DateTime.UtcNow
-            };
+                var order = await _context.Orders.FindAsync(model.OrderId);
+                if (order == null)
+                    return NotFound(new { error = "Order not found" });
 
-            _context.Returns.Add(newReturn);
-            await _context.SaveChangesAsync();
+                var newReturn = new Return
+                {
+                    OrderId = model.OrderId,
+                    UserId = order.UserId,
+                    Reason = model.Reason,
+                    Status = "Pending",
+                    CreatedAt = DateTime.UtcNow
+                };
 
-            return Ok(new { message = "Return request created successfully", returnId = newReturn.ReturnId });
+                _context.Returns.Add(newReturn);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new { message = "Return request created successfully", returnId = newReturn.ReturnId });
+            }
+            catch (DbUpdateException dbEx)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "Database error occurred while creating return", details = dbEx.Message });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
         }
 
-        // ================= GET ALL RETURNS =================
-        // GET: api/Return
+        // ================= GET ALL RETURNS WITH PAGINATION =================
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<ReturnDTO>>> GetAllReturns()
+        public async Task<ActionResult<IEnumerable<ReturnDTO>>> GetAllReturns(
+            int page = 1,
+            int pageSize = 20,
+            string? statusFilter = null)
         {
-            var returns = await _context.Returns
-                .Select(r => new ReturnDTO
-                {
-                    ReturnId = r.ReturnId,
-                    OrderId = r.OrderId,
-                    Status = r.Status,
-                    CreatedAt = r.CreatedAt
-                })
-                .ToListAsync();
+            if (page <= 0) page = 1;
+            if (pageSize <= 0) pageSize = 20;
 
-            return Ok(returns);
+            try
+            {
+                var query = _context.Returns.AsQueryable();
+
+                if (!string.IsNullOrWhiteSpace(statusFilter))
+                {
+                    query = query.Where(r => r.Status == statusFilter);
+                }
+
+                var totalCount = await query.CountAsync();
+
+                var returns = await query
+                    .OrderByDescending(r => r.CreatedAt)
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .Select(r => new ReturnDTO
+                    {
+                        ReturnId = r.ReturnId,
+                        OrderId = r.OrderId,
+                        Status = r.Status,
+                        CreatedAt = r.CreatedAt
+                    })
+                    .ToListAsync();
+
+                return Ok(new
+                {
+                    totalCount,
+                    page,
+                    pageSize,
+                    returns
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch returns", details = ex.Message });
+            }
         }
 
         // ================= GET RETURN BY ID =================
-        // GET: api/Return/5
         [HttpGet("{id}")]
         public async Task<ActionResult<ReturnDTO>> GetReturnById(long id)
         {
-            var r = await _context.Returns
-                .Where(r => r.ReturnId == id)
-                .Select(r => new ReturnDTO
-                {
-                    ReturnId = r.ReturnId,
-                    OrderId = r.OrderId,
-                    Status = r.Status,
-                    CreatedAt = r.CreatedAt
-                })
-                .FirstOrDefaultAsync();
+            try
+            {
+                var r = await _context.Returns
+                    .Where(r => r.ReturnId == id)
+                    .Select(r => new ReturnDTO
+                    {
+                        ReturnId = r.ReturnId,
+                        OrderId = r.OrderId,
+                        Status = r.Status,
+                        CreatedAt = r.CreatedAt
+                    })
+                    .FirstOrDefaultAsync();
 
-            if (r == null)
-                return NotFound("Return not found.");
+                if (r == null)
+                    return NotFound(new { error = "Return not found" });
 
-            return Ok(r);
+                return Ok(r);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch return", details = ex.Message });
+            }
         }
 
         // ================= UPDATE RETURN =================
-        // PUT: api/Return/5
         [HttpPut("{id}")]
+        [Authorize(Roles = "Admin,Finance")]
         public async Task<IActionResult> UpdateReturn(long id, [FromBody] CreateReturn model)
         {
-            var r = await _context.Returns.FindAsync(id);
-            if (r == null)
-                return NotFound("Return not found.");
+            if (model == null)
+                return BadRequest(new { error = "Invalid request payload" });
 
-            r.Reason = model.Reason ?? r.Reason;
-            // Status and other properties can be updated separately
+            using var transaction = await _context.Database.BeginTransactionAsync();
 
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "Return updated successfully." });
+            try
+            {
+                var r = await _context.Returns.FindAsync(id);
+                if (r == null)
+                    return NotFound(new { error = "Return not found" });
+
+                r.Reason = model.Reason ?? r.Reason;
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new { message = "Return updated successfully" });
+            }
+            catch (DbUpdateException dbEx)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "Database error occurred while updating return", details = dbEx.Message });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
         }
 
         // ================= UPDATE STATUS =================
-        // PATCH: api/Return/{id}/status
         [HttpPatch("{id}/status")]
+        [Authorize(Roles = "Admin,Finance")]
         public async Task<IActionResult> UpdateReturnStatus(long id, [FromBody] string status)
         {
-            var r = await _context.Returns.FindAsync(id);
-            if (r == null)
-                return NotFound("Return not found.");
+            if (string.IsNullOrWhiteSpace(status))
+                return BadRequest(new { error = "Status cannot be empty" });
 
-            r.Status = status;
-            await _context.SaveChangesAsync();
+            if (!allowedStatuses.Contains(status))
+                return BadRequest(new { error = $"Invalid status. Allowed values: {string.Join(", ", allowedStatuses)}" });
 
-            return Ok(new { message = $"Return status updated to {status}" });
+            using var transaction = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                var r = await _context.Returns.FindAsync(id);
+                if (r == null)
+                    return NotFound(new { error = "Return not found" });
+
+                r.Status = status;
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new { message = $"Return status updated to {status}" });
+            }
+            catch (DbUpdateException dbEx)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "Database error occurred while updating return status", details = dbEx.Message });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
         }
 
         // ================= DELETE =================
-        // DELETE: api/Return/5
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin,Finance")]
         public async Task<IActionResult> DeleteReturn(long id)
         {
-            var r = await _context.Returns.FindAsync(id);
-            if (r == null)
-                return NotFound("Return not found.");
+            using var transaction = await _context.Database.BeginTransactionAsync();
 
-            _context.Returns.Remove(r);
-            await _context.SaveChangesAsync();
+            try
+            {
+                var r = await _context.Returns.FindAsync(id);
+                if (r == null)
+                    return NotFound(new { error = "Return not found" });
 
-            return Ok(new { message = "Return deleted successfully." });
+                _context.Returns.Remove(r);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return Ok(new { message = "Return deleted successfully" });
+            }
+            catch (DbUpdateException dbEx)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "Database error occurred while deleting return", details = dbEx.Message });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
         }
     }
 }

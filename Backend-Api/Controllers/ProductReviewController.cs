@@ -11,26 +11,22 @@ namespace Backend_Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize] // User must be logged in for create/update/delete
+    [Authorize]
     public class ProductReviewController : ControllerBase
     {
         private readonly LaptopHarbourDbContext _context;
+        private readonly IWebHostEnvironment _env;
 
-        public ProductReviewController(LaptopHarbourDbContext context)
+        public ProductReviewController(LaptopHarbourDbContext context, IWebHostEnvironment env)
         {
             _context = context;
+            _env = env;
         }
 
-        // =========================================================
-        // GET REVIEWS BY PRODUCT (Pagination + Average Rating)
-        // GET: api/ProductReview/product/{productId}
-        // =========================================================
+        // ================= GET REVIEWS BY PRODUCT WITH AVERAGE RATING =================
         [HttpGet("product/{productId}")]
         [AllowAnonymous]
-        public async Task<IActionResult> GetReviewsByProduct(
-            int productId,
-            int pageNumber = 1,
-            int pageSize = 10)
+        public async Task<IActionResult> GetReviewsByProduct(int productId, int pageNumber = 1, int pageSize = 10)
         {
             try
             {
@@ -40,6 +36,7 @@ namespace Backend_Api.Controllers
                 var query = _context.ProductReviews
                     .Where(r => r.ProductId == productId)
                     .Include(r => r.User)
+                    .Include(r => r.Images)
                     .OrderByDescending(r => r.CreatedAt);
 
                 var totalReviews = await query.CountAsync();
@@ -53,13 +50,17 @@ namespace Backend_Api.Controllers
                         ReviewId = r.ReviewId,
                         Rating = r.Rating ?? 0,
                         ReviewText = r.ReviewText,
-                        UserName = r.User != null ? r.User.Username : "Unknown",
-                        CreatedAt = r.CreatedAt
+                        UserName = r.User.Username,
+                        CreatedAt = r.CreatedAt,
+                        UpdatedAt = r.UpdatedAt,
+                        ImageUrl = r.Images.OrderBy(i => i.ReviewImageId)
+                                          .Select(i => i.ImageUrl)
+                                          .FirstOrDefault()
                     })
                     .ToListAsync();
 
-                // Safe Average Rating calculation
-                var averageRating = totalReviews == 0 ? 0 :
+                // Safe Average Rating
+                double averageRating = totalReviews == 0 ? 0 :
                     await _context.ProductReviews
                         .Where(r => r.ProductId == productId)
                         .AverageAsync(r => r.Rating ?? 0);
@@ -76,22 +77,14 @@ namespace Backend_Api.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    error = "Failed to fetch reviews.",
-                    details = ex.Message
-                });
+                return StatusCode(500, new { error = "Failed to fetch reviews.", details = ex.Message });
             }
         }
 
-        // =========================================================
-        // CREATE REVIEW
-        // User must be logged in
-        // User must have purchased the product
-        // Only one review per product per user
-        // =========================================================
+        // ================= CREATE REVIEW WITH IMAGE =================
         [HttpPost]
-        public async Task<IActionResult> CreateReview([FromBody] CreateProductReview model)
+        [DisableRequestSizeLimit]
+        public async Task<IActionResult> CreateReview([FromForm] CreateProductReviewWithImage model)
         {
             try
             {
@@ -104,18 +97,14 @@ namespace Backend_Api.Controllers
 
                 int userId = int.Parse(userIdClaim);
 
-                // --- CHECK IF USER PURCHASED THE PRODUCT ---
                 bool purchased = await _context.OrderItems
                     .Include(oi => oi.Order)
-                    .Include(oi => oi.Variant) // Include variant to access ProductId
-                    .AnyAsync(oi =>
-                        oi.Variant.ProductId == model.ProductId && // Access through variant
-                        oi.Order.UserId == userId);
+                    .Include(oi => oi.Variant)
+                    .AnyAsync(oi => oi.Variant.ProductId == model.ProductId && oi.Order.UserId == userId);
 
                 if (!purchased)
                     return BadRequest(new { error = "You can only review products you have purchased." });
 
-                // Prevent duplicate review
                 bool alreadyReviewed = await _context.ProductReviews
                     .AnyAsync(r => r.ProductId == model.ProductId && r.UserId == userId);
 
@@ -134,42 +123,60 @@ namespace Backend_Api.Controllers
                 _context.ProductReviews.Add(review);
                 await _context.SaveChangesAsync();
 
-                var dto = await _context.ProductReviews
-                    .Include(r => r.User)
-                    .Where(r => r.ReviewId == review.ReviewId)
-                    .Select(r => new ProductReviewDTO
-                    {
-                        ReviewId = r.ReviewId,
-                        Rating = r.Rating ?? 0,
-                        ReviewText = r.ReviewText,
-                        UserName = r.User != null ? r.User.Username : "Unknown",
-                        CreatedAt = r.CreatedAt
-                    })
-                    .FirstOrDefaultAsync();
+                string? imageUrl = null;
 
-                return Ok(new
+                // Save single image if provided
+                if (model.Image != null)
                 {
-                    message = "Review created successfully.",
-                    data = dto
-                });
+                    string[] allowedExtensions = { ".jpg", ".jpeg", ".png" };
+                    var ext = Path.GetExtension(model.Image.FileName).ToLower();
+                    if (!allowedExtensions.Contains(ext))
+                        return BadRequest(new { error = "Only JPG, JPEG, PNG files are allowed." });
+                    if (model.Image.Length > 5 * 1024 * 1024)
+                        return BadRequest(new { error = "Image size cannot exceed 5 MB." });
+
+                    var uploadPath = Path.Combine(_env.WebRootPath ?? "wwwroot", "uploads", "reviews");
+                    Directory.CreateDirectory(uploadPath);
+
+                    string fileName = $"{Guid.NewGuid()}{ext}";
+                    string fullPath = Path.Combine(uploadPath, fileName);
+
+                    using var stream = System.IO.File.Create(fullPath);
+                    await model.Image.CopyToAsync(stream);
+
+                    var reviewImage = new ReviewImage
+                    {
+                        ReviewId = review.ReviewId,
+                        ImageUrl = $"/uploads/reviews/{fileName}"
+                    };
+                    _context.ReviewImages.Add(reviewImage);
+                    await _context.SaveChangesAsync();
+
+                    imageUrl = reviewImage.ImageUrl;
+                }
+
+                var dto = new ProductReviewDTO
+                {
+                    ReviewId = review.ReviewId,
+                    Rating = review.Rating ?? 0,
+                    ReviewText = review.ReviewText,
+                    UserName = User.Identity?.Name ?? "Unknown",
+                    CreatedAt = review.CreatedAt,
+                    UpdatedAt = review.UpdatedAt,
+                    ImageUrl = imageUrl
+                };
+
+                return Ok(new { message = "Review created successfully.", data = dto });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    error = "Failed to create review.",
-                    details = ex.Message
-                });
+                return StatusCode(500, new { error = "Failed to create review.", details = ex.Message });
             }
         }
 
-        // =========================================================
-        // UPDATE REVIEW
-        // Only owner can update
-        // No duplicate review text for same product
-        // =========================================================
+        // ================= UPDATE REVIEW + IMAGE =================
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateReview(int id, [FromBody] CreateProductReview model)
+        public async Task<IActionResult> UpdateReview(int id, [FromForm] CreateProductReviewWithImage model)
         {
             try
             {
@@ -180,48 +187,85 @@ namespace Backend_Api.Controllers
                 int userId = int.Parse(userIdClaim);
 
                 var review = await _context.ProductReviews
+                    .Include(r => r.Images)
                     .FirstOrDefaultAsync(r => r.ReviewId == id && r.UserId == userId);
 
                 if (review == null)
                     return NotFound(new { error = "Review not found or you are not authorized." });
 
-                // Prevent duplicate review text for same product
                 bool duplicate = await _context.ProductReviews
-                    .AnyAsync(r =>
-                        r.ProductId == review.ProductId &&
-                        r.UserId == userId &&
-                        r.ReviewId != review.ReviewId &&
-                        r.ReviewText == model.ReviewText);
+                    .AnyAsync(r => r.ProductId == review.ProductId &&
+                                   r.UserId == userId &&
+                                   r.ReviewId != review.ReviewId &&
+                                   r.ReviewText == model.ReviewText);
 
                 if (duplicate)
-                    return BadRequest(new
-                    {
-                        error = "You have already submitted a review with the same text for this product."
-                    });
+                    return BadRequest(new { error = "Duplicate review text for this product." });
 
                 review.Rating = model.Rating;
                 review.ReviewText = model.ReviewText;
                 review.UpdatedAt = DateTime.UtcNow;
 
-                _context.ProductReviews.Update(review);
+                string? imageUrl = review.Images.Select(i => i.ImageUrl).FirstOrDefault();
+
+                if (model.Image != null)
+                {
+                    string[] allowedExtensions = { ".jpg", ".jpeg", ".png" };
+                    var ext = Path.GetExtension(model.Image.FileName).ToLower();
+                    if (!allowedExtensions.Contains(ext))
+                        return BadRequest(new { error = "Only JPG, JPEG, PNG files are allowed." });
+                    if (model.Image.Length > 5 * 1024 * 1024)
+                        return BadRequest(new { error = "Image size cannot exceed 5 MB." });
+
+                    // Delete old image
+                    var oldImage = review.Images.FirstOrDefault();
+                    if (oldImage != null)
+                    {
+                        var oldPath = Path.Combine(_env.WebRootPath ?? "wwwroot", oldImage.ImageUrl.TrimStart('/'));
+                        if (System.IO.File.Exists(oldPath)) System.IO.File.Delete(oldPath);
+                        _context.ReviewImages.Remove(oldImage);
+                    }
+
+                    var uploadPath = Path.Combine(_env.WebRootPath ?? "wwwroot", "uploads", "reviews");
+                    Directory.CreateDirectory(uploadPath);
+
+                    string fileName = $"{Guid.NewGuid()}{ext}";
+                    string fullPath = Path.Combine(uploadPath, fileName);
+
+                    using var stream = System.IO.File.Create(fullPath);
+                    await model.Image.CopyToAsync(stream);
+
+                    var reviewImage = new ReviewImage
+                    {
+                        ReviewId = review.ReviewId,
+                        ImageUrl = $"/uploads/reviews/{fileName}"
+                    };
+                    _context.ReviewImages.Add(reviewImage);
+                    imageUrl = reviewImage.ImageUrl;
+                }
+
                 await _context.SaveChangesAsync();
 
-                return Ok(new { message = "Review updated successfully." });
+                var dto = new ProductReviewDTO
+                {
+                    ReviewId = review.ReviewId,
+                    Rating = review.Rating ?? 0,
+                    ReviewText = review.ReviewText,
+                    UserName = User.Identity?.Name ?? "Unknown",
+                    CreatedAt = review.CreatedAt,
+                    UpdatedAt = review.UpdatedAt,
+                    ImageUrl = imageUrl
+                };
+
+                return Ok(new { message = "Review updated successfully.", data = dto });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    error = "Failed to update review.",
-                    details = ex.Message
-                });
+                return StatusCode(500, new { error = "Failed to update review.", details = ex.Message });
             }
         }
 
-        // =========================================================
-        // DELETE REVIEW
-        // Only owner can delete
-        // =========================================================
+        // ================= DELETE REVIEW + IMAGE =================
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteReview(int id)
         {
@@ -234,10 +278,18 @@ namespace Backend_Api.Controllers
                 int userId = int.Parse(userIdClaim);
 
                 var review = await _context.ProductReviews
+                    .Include(r => r.Images)
                     .FirstOrDefaultAsync(r => r.ReviewId == id && r.UserId == userId);
 
                 if (review == null)
                     return NotFound(new { error = "Review not found or you are not authorized." });
+
+                var image = review.Images.FirstOrDefault();
+                if (image != null)
+                {
+                    var filePath = Path.Combine(_env.WebRootPath ?? "wwwroot", image.ImageUrl.TrimStart('/'));
+                    if (System.IO.File.Exists(filePath)) System.IO.File.Delete(filePath);
+                }
 
                 _context.ProductReviews.Remove(review);
                 await _context.SaveChangesAsync();
@@ -246,12 +298,14 @@ namespace Backend_Api.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    error = "Failed to delete review.",
-                    details = ex.Message
-                });
+                return StatusCode(500, new { error = "Failed to delete review.", details = ex.Message });
             }
         }
+    }
+
+    // ================= MODEL FOR SINGLE IMAGE =================
+    public class CreateProductReviewWithImage : CreateProductReview
+    {
+        public IFormFile? Image { get; set; }
     }
 }

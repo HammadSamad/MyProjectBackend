@@ -1819,9 +1819,24 @@
     "Order": 0,
     "Parameters": [
       {
-        "Name": "model",
-        "Type": "Backend_Api.Models.Model_Create.CreateProductReview",
-        "IsRequired": true
+        "Name": "Image",
+        "Type": "Microsoft.AspNetCore.Http.IFormFile",
+        "IsRequired": false
+      },
+      {
+        "Name": "ProductId",
+        "Type": "System.Int32",
+        "IsRequired": false
+      },
+      {
+        "Name": "Rating",
+        "Type": "System.Int32",
+        "IsRequired": false
+      },
+      {
+        "Name": "ReviewText",
+        "Type": "System.String",
+        "IsRequired": false
       }
     ],
     "ReturnTypes": []
@@ -1840,9 +1855,24 @@
         "IsRequired": true
       },
       {
-        "Name": "model",
-        "Type": "Backend_Api.Models.Model_Create.CreateProductReview",
-        "IsRequired": true
+        "Name": "Image",
+        "Type": "Microsoft.AspNetCore.Http.IFormFile",
+        "IsRequired": false
+      },
+      {
+        "Name": "ProductId",
+        "Type": "System.Int32",
+        "IsRequired": false
+      },
+      {
+        "Name": "Rating",
+        "Type": "System.Int32",
+        "IsRequired": false
+      },
+      {
+        "Name": "ReviewText",
+        "Type": "System.String",
+        "IsRequired": false
       }
     ],
     "ReturnTypes": []
@@ -2263,7 +2293,23 @@
     "HttpMethod": "GET",
     "IsController": true,
     "Order": 0,
-    "Parameters": [],
+    "Parameters": [
+      {
+        "Name": "page",
+        "Type": "System.Int32",
+        "IsRequired": false
+      },
+      {
+        "Name": "pageSize",
+        "Type": "System.Int32",
+        "IsRequired": false
+      },
+      {
+        "Name": "statusFilter",
+        "Type": "System.String",
+        "IsRequired": false
+      }
+    ],
     "ReturnTypes": [
       {
         "Type": "System.Collections.Generic.IEnumerable\u00601[[Backend_Api.Models.Model_DTO.RefundDTO, Backend-Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]",
@@ -2362,7 +2408,23 @@
     "HttpMethod": "GET",
     "IsController": true,
     "Order": 0,
-    "Parameters": [],
+    "Parameters": [
+      {
+        "Name": "page",
+        "Type": "System.Int32",
+        "IsRequired": false
+      },
+      {
+        "Name": "pageSize",
+        "Type": "System.Int32",
+        "IsRequired": false
+      },
+      {
+        "Name": "statusFilter",
+        "Type": "System.String",
+        "IsRequired": false
+      }
+    ],
     "ReturnTypes": [
       {
         "Type": "System.Collections.Generic.IEnumerable\u00601[[Backend_Api.Models.Model_DTO.ReturnDTO, Backend-Api, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null]]",

@@ -382,6 +382,16 @@ CREATE TABLE product_reviews (
 );
 GO
 
+CREATE TABLE review_images
+(
+    reviewImage_id INT IDENTITY(1,1) PRIMARY KEY,
+    review_id INT NOT NULL,
+    imageUrl NVARCHAR(500) NOT NULL,
+    CONSTRAINT FK_review_images_product_reviews FOREIGN KEY (review_id)
+        REFERENCES product_reviews(review_id)
+        ON DELETE CASCADE
+);
+
 CREATE TABLE variant_price_history (
     id BIGINT IDENTITY PRIMARY KEY,
     variant_id INT NOT NULL,

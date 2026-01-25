@@ -70,6 +70,8 @@ public partial class LaptopHarbourDbContext : DbContext
 
     public virtual DbSet<Return> Returns { get; set; }
 
+    public DbSet<ReviewImage> ReviewImages { get; set; } = null!;
+
     public virtual DbSet<Role> Roles { get; set; }
 
     public virtual DbSet<RolePermission> RolePermissions { get; set; }
@@ -860,7 +862,18 @@ public partial class LaptopHarbourDbContext : DbContext
                 .HasConstraintName("FK__returns__user_id__00AA174D");
         });
 
-        modelBuilder.Entity<Role>(entity =>
+    {
+        base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<ReviewImage>()
+            .HasOne(r => r.Review)
+            .WithMany(r => r.Images)
+            .HasForeignKey(r => r.ReviewId)
+            .HasConstraintName("FK_review_images_product_reviews")
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+
+    modelBuilder.Entity<Role>(entity =>
         {
             entity.HasKey(e => e.RoleId).HasName("PK__roles__760965CCEB9FC4C0");
 

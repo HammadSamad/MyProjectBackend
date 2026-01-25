@@ -23,17 +23,36 @@ namespace Backend_Api.Controllers
         [HttpPost]
         public async Task<IActionResult> AddProductView(int productId, int? userId = null)
         {
-            var view = new ProductView
+            if (productId <= 0)
+                return BadRequest(new { error = "Invalid product ID" });
+
+            try
             {
-                ProductId = productId,
-                UserId = userId,
-                ViewedAt = DateTime.UtcNow
-            };
+                // Check if product exists
+                var productExists = await _context.Products.AnyAsync(p => p.ProductId == productId);
+                if (!productExists)
+                    return NotFound(new { error = "Product not found" });
 
-            _context.ProductViews.Add(view);
-            await _context.SaveChangesAsync();
+                var view = new ProductView
+                {
+                    ProductId = productId,
+                    UserId = userId,
+                    ViewedAt = DateTime.UtcNow
+                };
 
-            return Ok(new { message = "Product view logged successfully" });
+                _context.ProductViews.Add(view);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Product view logged successfully" });
+            }
+            catch (DbUpdateException dbEx)
+            {
+                return StatusCode(500, new { error = "Database error occurred while logging product view", details = dbEx.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
         }
 
         // =====================================================
@@ -43,22 +62,29 @@ namespace Backend_Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAllViews()
         {
-            var views = await _context.ProductViews
-                .Include(v => v.Product)
-                .Include(v => v.User)
-                .Select(v => new
-                {
-                    v.ViewId,
-                    v.ProductId,
-                    ProductName = v.Product.ProductName,
-                    v.UserId,
-                    Username = v.User != null ? v.User.Username : "Guest",
-                    v.ViewedAt
-                })
-                .OrderByDescending(v => v.ViewedAt)
-                .ToListAsync();
+            try
+            {
+                var views = await _context.ProductViews
+                    .Include(v => v.Product)
+                    .Include(v => v.User)
+                    .Select(v => new
+                    {
+                        v.ViewId,
+                        v.ProductId,
+                        ProductName = v.Product.ProductName,
+                        v.UserId,
+                        Username = v.User != null ? v.User.Username : "Guest",
+                        v.ViewedAt
+                    })
+                    .OrderByDescending(v => v.ViewedAt)
+                    .ToListAsync();
 
-            return Ok(views);
+                return Ok(views);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch product views", details = ex.Message });
+            }
         }
 
         // =====================================================
@@ -68,23 +94,37 @@ namespace Backend_Api.Controllers
         [HttpDelete("cleanup/{days}")]
         public async Task<IActionResult> CleanupOldViews(int days)
         {
-            var cutoffDate = DateTime.UtcNow.AddDays(7-days);
+            if (days <= 0)
+                return BadRequest(new { error = "Days parameter must be greater than zero" });
 
-            var oldViews = await _context.ProductViews
-                .Where(v => v.ViewedAt < cutoffDate)
-                .ToListAsync();
-
-            if (!oldViews.Any())
-                return Ok(new { message = "No old product views to delete" });
-
-            _context.ProductViews.RemoveRange(oldViews);
-            await _context.SaveChangesAsync();
-
-            return Ok(new
+            try
             {
-                message = "Old product views deleted successfully",
-                deletedCount = oldViews.Count
-            });
+                var cutoffDate = DateTime.UtcNow.AddDays(-days);
+
+                var oldViews = await _context.ProductViews
+                    .Where(v => v.ViewedAt < cutoffDate)
+                    .ToListAsync();
+
+                if (!oldViews.Any())
+                    return Ok(new { message = "No old product views to delete" });
+
+                _context.ProductViews.RemoveRange(oldViews);
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message = "Old product views deleted successfully",
+                    deletedCount = oldViews.Count
+                });
+            }
+            catch (DbUpdateException dbEx)
+            {
+                return StatusCode(500, new { error = "Database error occurred while deleting old product views", details = dbEx.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+            }
         }
     }
 }
