@@ -17,9 +17,34 @@ namespace Backend_Api.Controllers
             _context = context;
         }
 
-        // ---------------------------------------------------------
-        // GET: api/ProductVariants → All variants
-        // ---------------------------------------------------------
+        // ================= HELPER =================
+        private decimal CalculateFinalPrice(ProductVariant v)
+        {
+            if (v.Price == null) return 0;
+
+            var now = DateTime.UtcNow;
+
+            // If time based discount is defined but expired
+            if (v.DiscountStart.HasValue && v.DiscountEnd.HasValue)
+            {
+                if (now < v.DiscountStart || now > v.DiscountEnd)
+                    return v.Price.Value;
+            }
+
+            decimal finalPrice = v.Price.Value;
+
+            if (v.DiscountPercentage.HasValue && v.DiscountPercentage > 0)
+                finalPrice -= finalPrice * (v.DiscountPercentage.Value / 100);
+
+            else if (v.DiscountAmount.HasValue && v.DiscountAmount > 0)
+                finalPrice -= v.DiscountAmount.Value;
+
+            return finalPrice < 0 ? 0 : finalPrice;
+        }
+
+        // =====================================================
+        // GET: api/ProductVariants
+        // =====================================================
         [HttpGet]
         public async Task<IActionResult> GetAllVariants()
         {
@@ -34,14 +59,18 @@ namespace Backend_Api.Controllers
                         VariantId = v.VariantId,
                         Sku = v.Sku,
                         Price = v.Price,
+                        FinalPrice = CalculateFinalPrice(v),
                         Stock = v.Stock,
+                        DiscountPercentage = v.DiscountPercentage,
+                        DiscountAmount = v.DiscountAmount,
+                        DiscountStart = v.DiscountStart,
+                        DiscountEnd = v.DiscountEnd,
                         Specifications = v.VariantSpecificationOptions
                             .Select(vso => new VariantSpecificationOptionDTO
                             {
                                 SpecificationName = vso.Option.Specification.SpecificationName,
                                 OptionValue = vso.Option.OptionValue
-                            })
-                            .ToList()
+                            }).ToList()
                     })
                     .ToListAsync();
 
@@ -52,100 +81,66 @@ namespace Backend_Api.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"An error occurred while fetching variants: {ex.Message}");
+                return StatusCode(500, $"Failed to fetch variants: {ex.Message}");
             }
         }
 
-        // ---------------------------------------------------------
-        // GET: api/ProductVariants/{id} → Single variant
-        // ---------------------------------------------------------
+        // =====================================================
+        // GET: api/ProductVariants/{id}
+        // =====================================================
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetVariantById(int id)
         {
             try
             {
-                var variant = await _context.ProductVariants
+                var v = await _context.ProductVariants
                     .Include(v => v.VariantSpecificationOptions)
                         .ThenInclude(vso => vso.Option)
                             .ThenInclude(o => o.Specification)
-                    .Where(v => v.VariantId == id)
-                    .Select(v => new ProductVariantDTO
-                    {
-                        VariantId = v.VariantId,
-                        Sku = v.Sku,
-                        Price = v.Price,
-                        Stock = v.Stock,
-                        Specifications = v.VariantSpecificationOptions
-                            .Select(vso => new VariantSpecificationOptionDTO
-                            {
-                                SpecificationName = vso.Option.Specification.SpecificationName,
-                                OptionValue = vso.Option.OptionValue
-                            })
-                            .ToList()
-                    })
-                    .FirstOrDefaultAsync();
+                    .FirstOrDefaultAsync(v => v.VariantId == id);
 
-                if (variant == null)
+                if (v == null)
                     return NotFound($"Variant with ID {id} not found.");
 
-                return Ok(variant);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"An error occurred while fetching variant with ID {id}: {ex.Message}");
-            }
-        }
-
-        // ---------------------------------------------------------
-        // GET: api/ProductVariants/product/{productId}
-        // ---------------------------------------------------------
-        [HttpGet("product/{productId:int}")]
-        public async Task<IActionResult> GetVariantsByProduct(int productId)
-        {
-            try
-            {
-                var variants = await _context.ProductVariants
-                    .Where(v => v.ProductId == productId)
-                    .Include(v => v.VariantSpecificationOptions)
-                        .ThenInclude(vso => vso.Option)
-                            .ThenInclude(o => o.Specification)
-                    .Select(v => new ProductVariantDTO
+                var dto = new ProductVariantDTO
+                {
+                    VariantId = v.VariantId,
+                    Sku = v.Sku,
+                    Price = v.Price,
+                    FinalPrice = CalculateFinalPrice(v),
+                    Stock = v.Stock,
+                    DiscountPercentage = v.DiscountPercentage,
+                    DiscountAmount = v.DiscountAmount,
+                    DiscountStart = v.DiscountStart,
+                    DiscountEnd = v.DiscountEnd,
+                    Specifications = v.VariantSpecificationOptions.Select(vso => new VariantSpecificationOptionDTO
                     {
-                        VariantId = v.VariantId,
-                        Sku = v.Sku,
-                        Price = v.Price,
-                        Stock = v.Stock,
-                        Specifications = v.VariantSpecificationOptions
-                            .Select(vso => new VariantSpecificationOptionDTO
-                            {
-                                SpecificationName = vso.Option.Specification.SpecificationName,
-                                OptionValue = vso.Option.OptionValue
-                            })
-                            .ToList()
-                    })
-                    .ToListAsync();
+                        SpecificationName = vso.Option.Specification.SpecificationName,
+                        OptionValue = vso.Option.OptionValue
+                    }).ToList()
+                };
 
-                if (!variants.Any())
-                    return NotFound($"No variants found for product with ID {productId}.");
-
-                return Ok(variants);
+                return Ok(dto);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"An error occurred while fetching variants for product {productId}: {ex.Message}");
+                return StatusCode(500, $"Failed to fetch variant: {ex.Message}");
             }
         }
 
-        // ---------------------------------------------------------
-        // POST: api/ProductVariants → Create variant
-        // ---------------------------------------------------------
+        // =====================================================
+        // POST: api/ProductVariants
+        // =====================================================
         [HttpPost]
-        public async Task<IActionResult> CreateVariant([FromBody] CreateProductVariant model)
+        public async Task<IActionResult> CreateVariant(CreateProductVariant model)
         {
             try
             {
-                if (model == null || model.ProductId <= 0)
-                    return BadRequest("Invalid data.");
+                if (model.Price <= 0)
+                    return BadRequest("Price must be greater than 0.");
+
+                if (model.DiscountPercentage.HasValue && model.DiscountAmount.HasValue)
+                    return BadRequest("Use either DiscountPercentage or DiscountAmount, not both.");
 
                 var productExists = await _context.Products.AnyAsync(p => p.ProductId == model.ProductId);
                 if (!productExists)
@@ -157,6 +152,10 @@ namespace Backend_Api.Controllers
                     Sku = model.Sku,
                     Price = model.Price,
                     Stock = model.Stock,
+                    DiscountPercentage = model.DiscountPercentage,
+                    DiscountAmount = model.DiscountAmount,
+                    DiscountStart = model.DiscountStart,
+                    DiscountEnd = model.DiscountEnd,
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -169,21 +168,17 @@ namespace Backend_Api.Controllers
                     variantId = variant.VariantId
                 });
             }
-            catch (DbUpdateException dbEx)
-            {
-                return StatusCode(500, $"Database error occurred while creating variant: {dbEx.Message}");
-            }
             catch (Exception ex)
             {
-                return StatusCode(500, $"An error occurred while creating variant: {ex.Message}");
+                return StatusCode(500, $"Failed to create variant: {ex.Message}");
             }
         }
 
-        // ---------------------------------------------------------
-        // PUT: api/ProductVariants/{id} → Update variant
-        // ---------------------------------------------------------
+        // =====================================================
+        // PUT: api/ProductVariants/{id}
+        // =====================================================
         [HttpPut("{id:int}")]
-        public async Task<IActionResult> UpdateVariant(int id, [FromBody] CreateProductVariant model)
+        public async Task<IActionResult> UpdateVariant(int id, CreateProductVariant model)
         {
             try
             {
@@ -191,29 +186,31 @@ namespace Backend_Api.Controllers
                 if (variant == null)
                     return NotFound($"Variant with ID {id} not found.");
 
+                if (model.DiscountPercentage.HasValue && model.DiscountAmount.HasValue)
+                    return BadRequest("Use either DiscountPercentage or DiscountAmount, not both.");
+
                 variant.Sku = model.Sku;
                 variant.Price = model.Price;
                 variant.Stock = model.Stock;
+                variant.DiscountPercentage = model.DiscountPercentage;
+                variant.DiscountAmount = model.DiscountAmount;
+                variant.DiscountStart = model.DiscountStart;
+                variant.DiscountEnd = model.DiscountEnd;
                 variant.UpdatedAt = DateTime.UtcNow;
 
-                _context.ProductVariants.Update(variant);
                 await _context.SaveChangesAsync();
 
                 return Ok(new { message = "Variant updated successfully." });
             }
-            catch (DbUpdateException dbEx)
-            {
-                return StatusCode(500, $"Database error occurred while updating variant: {dbEx.Message}");
-            }
             catch (Exception ex)
             {
-                return StatusCode(500, $"An error occurred while updating variant: {ex.Message}");
+                return StatusCode(500, $"Failed to update variant: {ex.Message}");
             }
         }
 
-        // ---------------------------------------------------------
-        // DELETE: api/ProductVariants/{id} → Delete variant
-        // ---------------------------------------------------------
+        // =====================================================
+        // DELETE: api/ProductVariants/{id}
+        // =====================================================
         [HttpDelete("{id:int}")]
         public async Task<IActionResult> DeleteVariant(int id)
         {
@@ -227,7 +224,6 @@ namespace Backend_Api.Controllers
                 if (variant == null)
                     return NotFound($"Variant with ID {id} not found.");
 
-                // Remove related data first
                 _context.VariantSpecificationOptions.RemoveRange(variant.VariantSpecificationOptions);
                 _context.VariantPriceHistories.RemoveRange(variant.VariantPriceHistories);
                 _context.ProductVariants.Remove(variant);
@@ -236,13 +232,9 @@ namespace Backend_Api.Controllers
 
                 return Ok(new { message = "Variant deleted successfully." });
             }
-            catch (DbUpdateException dbEx)
-            {
-                return StatusCode(500, $"Database error occurred while deleting variant: {dbEx.Message}");
-            }
             catch (Exception ex)
             {
-                return StatusCode(500, $"An error occurred while deleting variant: {ex.Message}");
+                return StatusCode(500, $"Failed to delete variant: {ex.Message}");
             }
         }
     }

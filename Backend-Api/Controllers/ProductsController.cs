@@ -25,16 +25,16 @@ namespace Backend_Api.Controllers
         // =========================================================
         [HttpGet]
         public async Task<IActionResult> GetProducts(
-    string? search = null,
-    int? categoryId = null,
-    int? brandId = null,
-    decimal? minPrice = null,
-    decimal? maxPrice = null,
-    string? specs = null,
-    string? sort = null,
-    bool? discountedOnly = null, // <-- NEW PARAMETER
-    int page = 1,
-    int pageSize = 12)
+            string? search = null,
+            int? categoryId = null,
+            int? brandId = null,
+            decimal? minPrice = null,
+            decimal? maxPrice = null,
+            string? specs = null,
+            string? sort = null,
+            bool? discountedOnly = null,
+            int page = 1,
+            int pageSize = 12)
         {
             try
             {
@@ -56,7 +56,7 @@ namespace Backend_Api.Controllers
                     .Include(p => p.ProductReviews)
                     .AsQueryable();
 
-                // 🔍 SEARCH
+                // DB-safe filters
                 if (!string.IsNullOrWhiteSpace(search))
                 {
                     search = search.Trim();
@@ -65,37 +65,38 @@ namespace Backend_Api.Controllers
                         EF.Functions.Like(p.Description ?? "", $"%{search}%"));
                 }
 
-                // 🗂 CATEGORY FILTER
                 if (categoryId.HasValue)
                     query = query.Where(p => p.CategoryId == categoryId.Value);
 
-                // 🏷 BRAND FILTER
                 if (brandId.HasValue)
                     query = query.Where(p => p.BrandId == brandId.Value);
 
-                // 💰 PRICE FILTER
+                // Load data into memory for in-memory filtering
+                var products = await query.ToListAsync();
+
+                // PRICE FILTER
                 if (minPrice.HasValue)
-                    query = query.Where(p => p.ProductVariants.Any(v => CalculateFinalPrice(v) >= minPrice.Value));
+                    products = products.Where(p => p.ProductVariants.Any(v => CalculateFinalPrice(v) >= minPrice.Value)).ToList();
 
                 if (maxPrice.HasValue)
-                    query = query.Where(p => p.ProductVariants.Any(v => CalculateFinalPrice(v) <= maxPrice.Value));
+                    products = products.Where(p => p.ProductVariants.Any(v => CalculateFinalPrice(v) <= maxPrice.Value)).ToList();
 
-                // 💸 DISCOUNTED ONLY FILTER
-                if (discountedOnly.HasValue && discountedOnly.Value)
+                // DISCOUNTED ONLY FILTER
+                if (discountedOnly == true)
                 {
                     var now = DateTime.UtcNow;
-                    query = query.Where(p => p.ProductVariants.Any(v =>
-                        (v.DiscountPercentage.HasValue && v.DiscountPercentage.Value > 0 || v.DiscountAmount.HasValue && v.DiscountAmount.Value > 0) &&
-                        (!v.DiscountStart.HasValue || v.DiscountStart <= now) &&
-                        (!v.DiscountEnd.HasValue || v.DiscountEnd >= now)
-                    ));
+                    products = products.Where(p =>
+                        p.ProductVariants.Any(v =>
+                            ((v.DiscountPercentage ?? 0) > 0 || (v.DiscountAmount ?? 0) > 0) &&
+                            (!v.DiscountStart.HasValue || v.DiscountStart <= now) &&
+                            (!v.DiscountEnd.HasValue || v.DiscountEnd >= now)
+                        )).ToList();
                 }
 
-                // 🧠 SPECIFICATION FILTER
+                // SPECIFICATION FILTER
                 if (!string.IsNullOrWhiteSpace(specs))
                 {
                     var filters = specs.Split(',');
-
                     foreach (var f in filters)
                     {
                         var parts = f.Split(':');
@@ -104,7 +105,7 @@ namespace Backend_Api.Controllers
                         var specName = parts[0].Trim();
                         var specValue = parts[1].Trim();
 
-                        query = query.Where(p =>
+                        products = products.Where(p =>
                             p.ProductSpecificationValues.Any(psv =>
                                 psv.Specification.SpecificationName == specName &&
                                 ((psv.ValueText != null && psv.ValueText == specValue) ||
@@ -116,26 +117,30 @@ namespace Backend_Api.Controllers
                                     vso.Option.Specification.SpecificationName == specName &&
                                     vso.Option.OptionValue == specValue
                                 ))
-                        );
+                        ).ToList();
                     }
                 }
 
-                // ↕ SORTING
-                query = sort switch
+                // SORTING
+                products = sort switch
                 {
-                    "price_asc" => query.OrderBy(p => p.ProductVariants.Min(v => CalculateFinalPrice(v))),
-                    "price_desc" => query.OrderByDescending(p => p.ProductVariants.Max(v => CalculateFinalPrice(v))),
-                    "newest" => query.OrderByDescending(p => p.CreatedAt),
-                    "name" => query.OrderBy(p => p.ProductName),
-                    _ => query.OrderByDescending(p => p.CreatedAt)
+                    "price_asc" => products
+                        .OrderBy(p => p.ProductVariants.Any() ? p.ProductVariants.Min(v => CalculateFinalPrice(v)) : decimal.MaxValue)
+                        .ToList(),
+
+                    "price_desc" => products
+                        .OrderByDescending(p => p.ProductVariants.Any() ? p.ProductVariants.Max(v => CalculateFinalPrice(v)) : 0)
+                        .ToList(),
+
+                    "newest" => products.OrderByDescending(p => p.CreatedAt).ToList(),
+                    "name" => products.OrderBy(p => p.ProductName).ToList(),
+                    _ => products.OrderByDescending(p => p.CreatedAt).ToList()
                 };
 
-                var totalRecords = await query.CountAsync();
+                var totalRecords = products.Count;
 
-                var products = await query
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
+                // PAGINATION
+                products = products.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
                 if (!products.Any())
                     return NotFound(new { error = "No products found with given filters." });
@@ -151,14 +156,9 @@ namespace Backend_Api.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    error = "An error occurred while fetching products.",
-                    details = ex.Message
-                });
+                return StatusCode(500, new { error = ex.Message });
             }
         }
-
 
         // =========================================================
         // GET PRODUCT BY ID
@@ -166,40 +166,23 @@ namespace Backend_Api.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetProduct(int id)
         {
-            try
-            {
-                var product = await _context.Products
-                    .Include(p => p.Brand)
-                    .Include(p => p.Category)
-                    .Include(p => p.ProductImages)
-                    .Include(p => p.ProductVariants)
-                        .ThenInclude(v => v.VariantSpecificationOptions)
-                            .ThenInclude(vso => vso.Option)
-                                .ThenInclude(o => o.Specification)
-                    .Include(p => p.ProductSpecificationValues)
-                        .ThenInclude(psv => psv.Specification)
-                    .Include(p => p.ProductSpecificationValues)
-                        .ThenInclude(psv => psv.Option)
-                    .Include(p => p.ProductReviews)
-                    .FirstOrDefaultAsync(p => p.ProductId == id);
+            var product = await _context.Products
+                .Include(p => p.Brand)
+                .Include(p => p.Category)
+                .Include(p => p.ProductImages)
+                .Include(p => p.ProductVariants)
+                    .ThenInclude(v => v.VariantSpecificationOptions)
+                        .ThenInclude(vso => vso.Option)
+                            .ThenInclude(o => o.Specification)
+                .Include(p => p.ProductSpecificationValues)
+                    .ThenInclude(psv => psv.Specification)
+                .Include(p => p.ProductReviews)
+                .FirstOrDefaultAsync(p => p.ProductId == id);
 
-                if (product == null)
-                    return NotFound(new { error = "Product not found." });
+            if (product == null)
+                return NotFound(new { error = "Product not found." });
 
-                return Ok(new
-                {
-                    message = "Product fetched successfully",
-                    data = MapToDTO(new List<Product> { product }).First()
-                });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new
-                {
-                    error = "An error occurred while fetching the product.",
-                    details = ex.Message
-                });
-            }
+            return Ok(MapToDTO(new List<Product> { product }).First());
         }
 
         // =========================================================
@@ -208,39 +191,24 @@ namespace Backend_Api.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateProduct([FromBody] CreateProduct model)
         {
-            try
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
+            var product = new Product
             {
-                if (!ModelState.IsValid)
-                    return BadRequest(ModelState);
+                ProductName = model.ProductName,
+                Description = model.Description,
+                CategoryId = model.CategoryId,
+                BrandId = model.BrandId,
+                WarrantyMonths = model.WarrantyMonths,
+                IsActive = model.IsActive,
+                CreatedAt = DateTime.UtcNow
+            };
 
-                var product = new Product
-                {
-                    ProductName = model.ProductName,
-                    Description = model.Description,
-                    CategoryId = model.CategoryId,
-                    BrandId = model.BrandId,
-                    WarrantyMonths = model.WarrantyMonths,
-                    IsActive = model.IsActive,
-                    CreatedAt = DateTime.UtcNow
-                };
+            _context.Products.Add(product);
+            await _context.SaveChangesAsync();
 
-                _context.Products.Add(product);
-                await _context.SaveChangesAsync();
-
-                return Ok(new
-                {
-                    message = "Product created successfully.",
-                    productId = product.ProductId
-                });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new
-                {
-                    error = "An error occurred while creating product.",
-                    details = ex.Message
-                });
-            }
+            return Ok(new { message = "Product created successfully", productId = product.ProductId });
         }
 
         // =========================================================
@@ -249,32 +217,23 @@ namespace Backend_Api.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateProduct(int id, [FromBody] CreateProduct model)
         {
-            try
-            {
-                var product = await _context.Products.FindAsync(id);
-                if (product == null)
-                    return NotFound(new { error = "Product not found." });
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
-                product.ProductName = model.ProductName;
-                product.Description = model.Description;
-                product.CategoryId = model.CategoryId;
-                product.BrandId = model.BrandId;
-                product.WarrantyMonths = model.WarrantyMonths;
-                product.IsActive = model.IsActive;
-                product.UpdatedAt = DateTime.UtcNow;
+            var product = await _context.Products.FindAsync(id);
+            if (product == null)
+                return NotFound(new { error = "Product not found." });
 
-                await _context.SaveChangesAsync();
+            product.ProductName = model.ProductName;
+            product.Description = model.Description;
+            product.CategoryId = model.CategoryId;
+            product.BrandId = model.BrandId;
+            product.WarrantyMonths = model.WarrantyMonths;
+            product.IsActive = model.IsActive;
+            product.UpdatedAt = DateTime.UtcNow;
 
-                return Ok(new { message = "Product updated successfully." });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new
-                {
-                    error = "An error occurred while updating product.",
-                    details = ex.Message
-                });
-            }
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "Product updated successfully." });
         }
 
         // =========================================================
@@ -283,52 +242,28 @@ namespace Backend_Api.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteProduct(int id)
         {
-            try
-            {
-                var product = await _context.Products
-                    .Include(p => p.ProductImages)
-                    .Include(p => p.ProductVariants)
-                        .ThenInclude(v => v.OrderItems)
-                    .FirstOrDefaultAsync(p => p.ProductId == id);
+            var product = await _context.Products
+                .Include(p => p.ProductImages)
+                .Include(p => p.ProductVariants)
+                    .ThenInclude(v => v.OrderItems)
+                .FirstOrDefaultAsync(p => p.ProductId == id);
 
-                if (product == null)
-                    return NotFound(new { error = "Product not found." });
+            if (product == null)
+                return NotFound(new { error = "Product not found." });
 
-                bool hasOrders = product.ProductVariants.Any(v => v.OrderItems.Any());
-                if (hasOrders)
-                    return BadRequest(new { error = "Cannot delete this product because it has associated orders." });
+            if (product.ProductVariants.Any(v => v.OrderItems.Any()))
+                return BadRequest(new { error = "Cannot delete product with orders." });
 
-                // Delete images from disk
-                foreach (var img in product.ProductImages)
-                {
-                    if (!string.IsNullOrEmpty(img.ImageUrl))
-                    {
-                        var path = Path.Combine(_env.WebRootPath, "upload", "Products", img.ImageUrl);
-                        if (System.IO.File.Exists(path))
-                            System.IO.File.Delete(path);
-                    }
-                }
+            _context.ProductImages.RemoveRange(product.ProductImages);
+            _context.ProductVariants.RemoveRange(product.ProductVariants);
+            _context.Products.Remove(product);
 
-                _context.ProductImages.RemoveRange(product.ProductImages);
-                _context.ProductVariants.RemoveRange(product.ProductVariants);
-                _context.Products.Remove(product);
-
-                await _context.SaveChangesAsync();
-
-                return Ok(new { message = "Product and related data deleted successfully." });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new
-                {
-                    error = "An error occurred while deleting product.",
-                    details = ex.Message
-                });
-            }
+            await _context.SaveChangesAsync();
+            return Ok(new { message = "Product deleted successfully." });
         }
 
         // =========================================================
-        // DTO MAPPING WITH AverageRating & FinalPrice
+        // DTO MAPPING
         // =========================================================
         private List<ProductDTO> MapToDTO(List<Product> products)
         {
@@ -357,24 +292,7 @@ namespace Backend_Api.Controllers
                     DiscountPercentage = v.DiscountPercentage,
                     DiscountAmount = v.DiscountAmount,
                     DiscountStart = v.DiscountStart,
-                    DiscountEnd = v.DiscountEnd,
-                    Specifications = v.VariantSpecificationOptions
-                        .Where(vso => vso.Option != null)
-                        .Select(vso => new VariantSpecificationOptionDTO
-                        {
-                            SpecificationName = vso.Option!.Specification.SpecificationName,
-                            OptionValue = vso.Option.OptionValue
-                        }).ToList()
-                }).ToList(),
-
-                Specifications = p.ProductSpecificationValues.Select(psv => new ProductSpecificationDTO
-                {
-                    SpecificationName = psv.Specification.SpecificationName,
-                    DataType = psv.Specification.DataType,
-                    ValueText = psv.ValueText,
-                    ValueNumber = psv.ValueNumber,
-                    ValueBool = psv.ValueBool ?? false,
-                    OptionValue = psv.Option?.OptionValue
+                    DiscountEnd = v.DiscountEnd
                 }).ToList(),
 
                 AverageRating = p.ProductReviews.Any()
@@ -384,28 +302,23 @@ namespace Backend_Api.Controllers
         }
 
         // =========================================================
-        // Helper → Calculate Final Price considering discount
+        // FINAL PRICE CALCULATOR
         // =========================================================
         private decimal CalculateFinalPrice(ProductVariant v)
         {
             decimal price = v.Price ?? 0;
+            var now = DateTime.UtcNow;
 
-            // Check discount date validity
-            if (v.DiscountStart.HasValue && v.DiscountEnd.HasValue)
-            {
-                var now = DateTime.UtcNow;
-                if (now < v.DiscountStart || now > v.DiscountEnd) return price;
-            }
+            if (v.DiscountStart.HasValue && now < v.DiscountStart) return price;
+            if (v.DiscountEnd.HasValue && now > v.DiscountEnd) return price;
 
-            // Apply percentage
-            if (v.DiscountPercentage.HasValue)
+            if (v.DiscountPercentage.HasValue && v.DiscountPercentage > 0)
                 price -= price * (v.DiscountPercentage.Value / 100);
 
-            // Apply fixed discount
-            if (v.DiscountAmount.HasValue)
+            if (v.DiscountAmount.HasValue && v.DiscountAmount > 0)
                 price -= v.DiscountAmount.Value;
 
-            return price >= 0 ? price : 0;
+            return price < 0 ? 0 : price;
         }
     }
 }

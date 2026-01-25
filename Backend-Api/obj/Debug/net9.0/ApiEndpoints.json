@@ -2208,22 +2208,6 @@
     "ReturnTypes": []
   },
   {
-    "ContainingType": "Backend_Api.Controllers.ProductVariantsController",
-    "Method": "GetVariantsByProduct",
-    "RelativePath": "api/ProductVariants/product/{productId}",
-    "HttpMethod": "GET",
-    "IsController": true,
-    "Order": 0,
-    "Parameters": [
-      {
-        "Name": "productId",
-        "Type": "System.Int32",
-        "IsRequired": true
-      }
-    ],
-    "ReturnTypes": []
-  },
-  {
     "ContainingType": "Backend_Api.Controllers.ProductViewController",
     "Method": "AddProductView",
     "RelativePath": "api/ProductView",
