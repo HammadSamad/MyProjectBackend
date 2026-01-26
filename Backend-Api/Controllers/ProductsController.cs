@@ -166,24 +166,49 @@ namespace Backend_Api.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetProduct(int id)
         {
-            var product = await _context.Products
-                .Include(p => p.Brand)
-                .Include(p => p.Category)
-                .Include(p => p.ProductImages)
-                .Include(p => p.ProductVariants)
-                    .ThenInclude(v => v.VariantSpecificationOptions)
-                        .ThenInclude(vso => vso.Option)
-                            .ThenInclude(o => o.Specification)
-                .Include(p => p.ProductSpecificationValues)
-                    .ThenInclude(psv => psv.Specification)
-                .Include(p => p.ProductReviews)
-                .FirstOrDefaultAsync(p => p.ProductId == id);
+            try
+            {
+                var product = await _context.Products
+                    .Include(p => p.Brand)
+                    .Include(p => p.Category)
+                    .Include(p => p.ProductImages)
 
-            if (product == null)
-                return NotFound(new { error = "Product not found." });
+                    // Variants + Variant Specifications
+                    .Include(p => p.ProductVariants)
+                        .ThenInclude(v => v.VariantSpecificationOptions)
+                            .ThenInclude(vso => vso.Option)
+                                .ThenInclude(o => o.Specification)
 
-            return Ok(MapToDTO(new List<Product> { product }).First());
+                    // Product level Specifications (IMPORTANT: add Option include)
+                    .Include(p => p.ProductSpecificationValues)
+                        .ThenInclude(psv => psv.Specification)
+                    .Include(p => p.ProductSpecificationValues)
+                        .ThenInclude(psv => psv.Option)
+
+                    .Include(p => p.ProductReviews)
+                    .FirstOrDefaultAsync(p => p.ProductId == id);
+
+                if (product == null)
+                    return NotFound(new { error = "Product not found." });
+
+                var dto = MapToDTO(new List<Product> { product }).First();
+
+                return Ok(new
+                {
+                    message = "Product fetched successfully",
+                    data = dto
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    error = "An error occurred while fetching the product.",
+                    details = ex.Message
+                });
+            }
         }
+
 
         // =========================================================
         // CREATE PRODUCT
@@ -294,7 +319,17 @@ namespace Backend_Api.Controllers
                     DiscountStart = v.DiscountStart,
                     DiscountEnd = v.DiscountEnd
                 }).ToList(),
+                Specifications = p.ProductSpecificationValues.Select(psv => new ProductSpecificationDTO
+                {
+                    SpecificationName = psv.Specification.SpecificationName,
+                    DataType = psv.Specification.DataType,
 
+                    ValueText = psv.ValueText,
+                    ValueNumber = psv.ValueNumber,
+                    ValueBool = psv.ValueBool,
+
+                    OptionValue = psv.Option != null ? psv.Option.OptionValue : null
+                }).ToList(),
                 AverageRating = p.ProductReviews.Any()
                     ? Math.Round(p.ProductReviews.Average(r => r.Rating ?? 0), 1)
                     : 0
