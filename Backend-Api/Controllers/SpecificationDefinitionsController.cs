@@ -98,7 +98,7 @@ namespace Backend_Api.Controllers
                 // Check for duplicate (case-insensitive)
                 if (await _context.SpecificationDefinitions
                     .AnyAsync(s => s.SpecificationName != null &&
-                                   s.SpecificationName.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                                   s.SpecificationName.ToLower() == name.ToLower()))
                 {
                     return BadRequest(new { error = "Specification name already exists." });
                 }
@@ -141,17 +141,19 @@ namespace Backend_Api.Controllers
                 // Check duplicate if name is changing
                 var newName = model.SpecificationName?.Trim();
                 if (!string.IsNullOrWhiteSpace(newName) &&
-                    !newName.Equals(entity.SpecificationName, StringComparison.OrdinalIgnoreCase))
+    entity.SpecificationName != null &&
+    entity.SpecificationName.ToLower() != newName.ToLower())
                 {
                     if (await _context.SpecificationDefinitions
                         .AnyAsync(s => s.SpecificationName != null &&
-                                       s.SpecificationName.Equals(newName, StringComparison.OrdinalIgnoreCase)))
+                                       s.SpecificationName.ToLower() == newName.ToLower()))
                     {
                         return BadRequest(new { error = "Specification name already exists." });
                     }
 
                     entity.SpecificationName = newName;
                 }
+
 
                 if (!string.IsNullOrWhiteSpace(model.DataType))
                 {

@@ -1,7 +1,12 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "D:\\Projects\\MyProjectBackend\\Backend-Api\\",
-  "Documents": [],
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|d:\\projects\\myprojectbackend\\backend-api\\controllers\\specificationdefinitionscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|solutionrelative:controllers\\specificationdefinitionscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
@@ -9,7 +14,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": -1,
+          "SelectedChildIndex": 3,
           "Children": [
             {
               "$type": "Bookmark",
@@ -22,6 +27,19 @@
             {
               "$type": "Bookmark",
               "Name": "ST:129:0:{1fc202d4-d401-403c-9834-5b218574bb67}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "SpecificationDefinitionsController.cs",
+              "DocumentMoniker": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Controllers\\SpecificationDefinitionsController.cs",
+              "RelativeDocumentMoniker": "Controllers\\SpecificationDefinitionsController.cs",
+              "ToolTip": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Controllers\\SpecificationDefinitionsController.cs",
+              "RelativeToolTip": "Controllers\\SpecificationDefinitionsController.cs",
+              "ViewState": "AgIAAF0AAAAAAAAAAAAiwHQAAAAdAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-01-26T18:15:07.314Z",
+              "EditorCaption": ""
             }
           ]
         }
