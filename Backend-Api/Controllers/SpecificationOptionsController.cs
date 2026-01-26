@@ -119,11 +119,12 @@ namespace Backend_Api.Controllers
                 if (!specExists)
                     return NotFound(new { error = "Specification not found." });
 
-                // Optional: prevent duplicate option value for the same specification
-                if (await _context.SpecificationOptions
-                    .AnyAsync(o => o.SpecificationId == model.SpecificationId &&
-                                   o.OptionValue != null &&
-                                   o.OptionValue.Equals(optionValue, StringComparison.OrdinalIgnoreCase)))
+                // FIXED: EF Core compatible case-insensitive check
+                var normalizedValue = optionValue.ToLower();
+                if (await _context.SpecificationOptions.AnyAsync(o =>
+                        o.SpecificationId == model.SpecificationId &&
+                        o.OptionValue != null &&
+                        o.OptionValue.ToLower() == normalizedValue))
                 {
                     return BadRequest(new { error = "Option value already exists for this specification." });
                 }
@@ -138,7 +139,8 @@ namespace Backend_Api.Controllers
                 _context.SpecificationOptions.Add(option);
                 await _context.SaveChangesAsync();
 
-                return Ok(new
+                // REST correct response: 201 Created
+                return CreatedAtAction(nameof(GetById), new { id = option.OptionId }, new
                 {
                     message = "Specification option created successfully.",
                     optionId = option.OptionId
@@ -165,12 +167,14 @@ namespace Backend_Api.Controllers
                 if (!string.IsNullOrWhiteSpace(model.OptionValue))
                 {
                     var valueTrimmed = model.OptionValue.Trim();
-                    // Optional: prevent duplicate value
-                    if (await _context.SpecificationOptions
-                        .AnyAsync(o => o.SpecificationId == option.SpecificationId &&
-                                       o.OptionId != id &&
-                                       o.OptionValue != null &&
-                                       o.OptionValue.Equals(valueTrimmed, StringComparison.OrdinalIgnoreCase)))
+                    var normalizedValue = valueTrimmed.ToLower();
+
+                    // FIXED: EF Core compatible case-insensitive duplicate check
+                    if (await _context.SpecificationOptions.AnyAsync(o =>
+                            o.SpecificationId == option.SpecificationId &&
+                            o.OptionId != id &&
+                            o.OptionValue != null &&
+                            o.OptionValue.ToLower() == normalizedValue))
                     {
                         return BadRequest(new { error = "Option value already exists for this specification." });
                     }
@@ -182,6 +186,7 @@ namespace Backend_Api.Controllers
                 {
                     var specExists = await _context.SpecificationDefinitions
                         .AnyAsync(s => s.SpecificationId == model.SpecificationId);
+
                     if (!specExists)
                         return NotFound(new { error = "Specification not found." });
 
