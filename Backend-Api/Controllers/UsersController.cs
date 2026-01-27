@@ -38,98 +38,105 @@ namespace Backend_Api.Controllers
         // Signup
         // -----------------------------
         [HttpPost("signup")]
-        public async Task<IActionResult> Signup([FromBody] Signup dto)
+public async Task<IActionResult> Signup([FromBody] Signup dto)
+{
+    try
+    {
+        // 1️⃣ Validate model
+        if (!ModelState.IsValid)
+            return BadRequest(new { message = "Invalid signup data.", errors = ModelState });
+
+        // 2️⃣ Check if username or email already exists
+        if (await _context.Users.AnyAsync(u => u.Username == dto.Username || u.Email == dto.Email))
+            return BadRequest(new { message = "Username or Email already exists." });
+
+        // 3️⃣ Create user
+        var user = new User
         {
-            try
+            Username = dto.Username,
+            Email = dto.Email,
+            FirstName = dto.FirstName,
+            LastName = dto.LastName,
+            PhoneNumber = dto.PhoneNumber,
+            PasswordHash = _passwordHasher.HashPassword(dto.Password),
+            IsActive = true,
+            IsEmailVerified = false,
+            IsPhoneVerified = false,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync(); // Save to get UserId
+
+        // 4️⃣ Create user profile
+        _context.UserProfiles.Add(new UserProfile
+        {
+            UserId = user.UserId,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        // 5️⃣ Ensure default role exists
+        var role = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == "User");
+        if (role == null)
+        {
+            role = new Role
             {
-                if (!ModelState.IsValid)
-                    return BadRequest(new { message = "Invalid signup data.", errors = ModelState });
-
-                if (await _context.Users.AnyAsync(u => u.Username == dto.Username || u.Email == dto.Email))
-                    return BadRequest(new { message = "Username or Email already exists." });
-
-                var user = new User
-                {
-                    Username = dto.Username,
-                    Email = dto.Email,
-                    FirstName = dto.FirstName,
-                    LastName = dto.LastName,
-                    PhoneNumber = dto.PhoneNumber,
-                    PasswordHash = _passwordHasher.HashPassword(dto.Password),
-                    IsActive = true,
-                    IsEmailVerified = false,
-                    IsPhoneVerified = false,
-                    CreatedAt = DateTime.UtcNow
-                };
-
-                // Save user first
-                _context.Users.Add(user);
-                await _context.SaveChangesAsync();
-
-                // Create profile
-                _context.UserProfiles.Add(new UserProfile
-                {
-                    UserId = user.UserId,
-                    CreatedAt = DateTime.UtcNow
-                });
-
-                // -----------------------------
-                // Assign default role = User
-                // -----------------------------
-                var roleId = await _context.Roles
-                    .Where(r => r.RoleName == "User")
-                    .Select(r => r.RoleId)
-                    .FirstOrDefaultAsync();
-
-                if (roleId == 0)
-                    return StatusCode(500, new { message = "Default role 'User' not found in database." });
-
-                _context.UserRoles.Add(new UserRole
-                {
-                    UserId = user.UserId,
-                    RoleId = roleId
-                });
-
-                // -----------------------------
-                // OTP Handling
-                // -----------------------------
-                // Invalidate old OTPs for this user
-                var oldOtps = await _context.UserVerifications
-                    .Where(v => v.UserId == user.UserId && v.Channel == "email" && !(v.IsUsed ?? false))
-                    .ToListAsync();
-                foreach (var o in oldOtps) o.IsUsed = true;
-
-                // Generate OTP for email verification
-                string otp = OTPHelper.GenerateOTP();
-                _context.UserVerifications.Add(new UserVerification
-                {
-                    UserId = user.UserId,
-                    Channel = "email",
-                    Code = otp,
-                    ExpiresAt = DateTime.UtcNow.AddMinutes(5),
-                    IsUsed = false,
-                    CreatedAt = DateTime.UtcNow
-                });
-
-                await _context.SaveChangesAsync();
-                await _emailService.SendEmailAsync(user.Email, "Verify your account", $"Your OTP is: {otp}");
-
-                return Ok(new
-                {
-                    message = "User registered successfully. Verification OTP sent to email.",
-                    userId = user.UserId,
-                    roles = new[] { "User" }   // Default role returned to frontend
-                });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new
-                {
-                    message = "Error occurred during signup.",
-                    error = ex.Message
-                });
-            }
+                RoleName = "User",
+                CreatedAt = DateTime.UtcNow
+            };
+            _context.Roles.Add(role);
+            await _context.SaveChangesAsync(); // Save to get RoleId
         }
+
+        // 6️⃣ Assign role to user
+        _context.UserRoles.Add(new UserRole
+        {
+            UserId = user.UserId,
+            RoleId = role.RoleId
+        });
+
+        // 7️⃣ Invalidate old OTPs for this user
+        var oldOtps = await _context.UserVerifications
+            .Where(v => v.UserId == user.UserId && v.Channel == "email" && !(v.IsUsed ?? false))
+            .ToListAsync();
+
+        foreach (var o in oldOtps)
+            o.IsUsed = true;
+
+        // 8️⃣ Generate OTP for email verification
+        string otp = OTPHelper.GenerateOTP();
+        _context.UserVerifications.Add(new UserVerification
+        {
+            UserId = user.UserId,
+            Channel = "email",
+            Code = otp,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(5),
+            IsUsed = false,
+            CreatedAt = DateTime.UtcNow
+        });
+
+        await _context.SaveChangesAsync();
+
+        // 9️⃣ Send OTP email
+        await _emailService.SendEmailAsync(user.Email, "Verify your account", $"Your OTP is: {otp}");
+
+        // 10️⃣ Return success
+        return Ok(new
+        {
+            message = "User registered successfully. Verification OTP sent to email.",
+            userId = user.UserId,
+            roles = new[] { "User" } // Default role returned to frontend
+        });
+    }
+    catch (Exception ex)
+    {
+        return StatusCode(500, new
+        {
+            message = "Error occurred during signup.",
+            error = ex.Message
+        });
+    }
+}
 
 
         // -----------------------------
