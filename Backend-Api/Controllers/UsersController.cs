@@ -62,15 +62,37 @@ namespace Backend_Api.Controllers
                     CreatedAt = DateTime.UtcNow
                 };
 
+                // Save user first
                 _context.Users.Add(user);
                 await _context.SaveChangesAsync();
 
+                // Create profile
                 _context.UserProfiles.Add(new UserProfile
                 {
                     UserId = user.UserId,
                     CreatedAt = DateTime.UtcNow
                 });
 
+                // -----------------------------
+                // Assign default role = User
+                // -----------------------------
+                var roleId = await _context.Roles
+                    .Where(r => r.RoleName == "User")
+                    .Select(r => r.RoleId)
+                    .FirstOrDefaultAsync();
+
+                if (roleId == 0)
+                    return StatusCode(500, new { message = "Default role 'User' not found in database." });
+
+                _context.UserRoles.Add(new UserRole
+                {
+                    UserId = user.UserId,
+                    RoleId = roleId
+                });
+
+                // -----------------------------
+                // OTP Handling
+                // -----------------------------
                 // Invalidate old OTPs for this user
                 var oldOtps = await _context.UserVerifications
                     .Where(v => v.UserId == user.UserId && v.Channel == "email" && !(v.IsUsed ?? false))
@@ -95,14 +117,20 @@ namespace Backend_Api.Controllers
                 return Ok(new
                 {
                     message = "User registered successfully. Verification OTP sent to email.",
-                    userId = user.UserId
+                    userId = user.UserId,
+                    roles = new[] { "User" }   // Default role returned to frontend
                 });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error occurred during signup.", error = ex.Message });
+                return StatusCode(500, new
+                {
+                    message = "Error occurred during signup.",
+                    error = ex.Message
+                });
             }
         }
+
 
         // -----------------------------
         // Login
@@ -184,7 +212,8 @@ namespace Backend_Api.Controllers
                 {
                     message = "Login successful.",
                     token = jwt,
-                    userId = user.UserId
+                    userId = user.UserId,
+                    roles = roles
                 });
             }
             catch (Exception ex)
@@ -401,7 +430,7 @@ namespace Backend_Api.Controllers
                     Expires = newRefreshToken.ExpiresAt
                 });
 
-                return Ok(new { message = "Token refreshed successfully.", token = jwt, userId = user.UserId });
+                return Ok(new { message = "Token refreshed successfully.", token = jwt, userId = user.UserId, roles = roles });
             }
             catch (Exception ex)
             {
@@ -462,7 +491,8 @@ namespace Backend_Api.Controllers
                     LastName = user.LastName,
                     PhoneNumber = user.PhoneNumber,
                     IsActive = user.IsActive,
-                    CreatedAt = user.CreatedAt
+                    CreatedAt = user.CreatedAt,
+                    Roles = user.UserRoles.Select(ur => ur.Role.RoleName).ToList()
                 };
 
                 return Ok(new { message = "User profile fetched successfully.", data = dto });
