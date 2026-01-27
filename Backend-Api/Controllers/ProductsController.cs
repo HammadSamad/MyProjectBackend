@@ -317,7 +317,14 @@ namespace Backend_Api.Controllers
                     DiscountPercentage = v.DiscountPercentage,
                     DiscountAmount = v.DiscountAmount,
                     DiscountStart = v.DiscountStart,
-                    DiscountEnd = v.DiscountEnd
+                    DiscountEnd = v.DiscountEnd,
+                    VariantSpecifications = v.VariantSpecificationOptions
+                .Select(vso => new VariantSpecificationOptionDTO
+                {
+                    OptionId = vso.OptionId,
+                    SpecificationName = vso.Option.Specification.SpecificationName,
+                    OptionValue = vso.Option.OptionValue
+                }).ToList()
                 }).ToList(),
                 Specifications = p.ProductSpecificationValues.Select(psv => new ProductSpecificationDTO
                 {

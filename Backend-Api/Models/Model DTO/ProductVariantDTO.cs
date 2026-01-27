@@ -14,5 +14,6 @@ namespace Backend_Api.Models
         public DateTime? DiscountStart { get; set; }
         public DateTime? DiscountEnd { get; set; }
         public List<VariantSpecificationOptionDTO> Specifications { get; set; } = new();
+        public List<VariantSpecificationOptionDTO> VariantSpecifications { get; set; } = new();
     }
 }
