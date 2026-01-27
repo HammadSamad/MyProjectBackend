@@ -17,22 +17,28 @@ namespace Backend_Api.Controllers
             _context = context;
         }
 
-        // ================= CREATE =================
+        // ================= CREATE / ADD CART ITEM =================
         [HttpPost]
         public async Task<IActionResult> AddCartItem([FromBody] AddCartItemDTO model)
         {
             try
             {
-                if (model == null)
-                    return BadRequest(new { message = "Invalid cart item data." });
+                if (model == null || model.Quantity <= 0)
+                    return BadRequest(new { message = "Invalid cart item data or quantity must be > 0." });
 
-                if (model.Quantity <= 0)
-                    return BadRequest(new { message = "Quantity must be greater than zero." });
+                // Check if cart exists for user; if not, create one
+                var cart = await _context.Carts
+                    .FirstOrDefaultAsync(c => c.CartId == model.CartId && c.UserId == model.UserId);
 
-                var cart = await _context.Carts.FindAsync(model.CartId);
                 if (cart == null)
-                    return NotFound(new { message = "Cart not found." });
+                {
+                    cart = new Cart { UserId = model.UserId, CreatedAt = DateTime.UtcNow };
+                    _context.Carts.Add(cart);
+                    await _context.SaveChangesAsync();
+                    model.CartId = cart.CartId;
+                }
 
+                // Check if item already exists in cart
                 var existingItem = await _context.CartItems
                     .FirstOrDefaultAsync(ci => ci.CartId == model.CartId && ci.VariantId == model.VariantId);
 
@@ -41,9 +47,11 @@ namespace Backend_Api.Controllers
                     existingItem.Quantity += model.Quantity;
                     await _context.SaveChangesAsync();
 
-                    return Ok(new { message = "Cart item quantity increased successfully." });
+                    var updatedItem = await GetCartItemDTO(existingItem.CartItemId);
+                    return Ok(new { message = "Cart item quantity increased successfully.", data = updatedItem });
                 }
 
+                // Add new cart item
                 var cartItem = new CartItem
                 {
                     CartId = model.CartId,
@@ -51,76 +59,63 @@ namespace Backend_Api.Controllers
                     Quantity = model.Quantity,
                     CreatedAt = DateTime.UtcNow
                 };
-
                 _context.CartItems.Add(cartItem);
                 await _context.SaveChangesAsync();
 
-                return Ok(new
-                {
-                    message = "Item added to cart successfully.",
-                    cartItemId = cartItem.CartItemId
-                });
+                var newItem = await GetCartItemDTO(cartItem.CartItemId);
+                return Ok(new { message = "Item added to cart successfully.", data = newItem });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    message = "An error occurred while adding item to the cart.",
-                    error = ex.Message
-                });
+                return StatusCode(500, new { message = "Error adding item to cart.", error = ex.Message });
             }
         }
 
-        // ================= GET ALL =================
+        // ================= GET ALL CART ITEMS (All carts) =================
         [HttpGet]
         public async Task<IActionResult> GetAllCartItems()
         {
             try
             {
                 var items = await _context.CartItems
+                    .Include(ci => ci.Cart)
+                    .Include(ci => ci.Variant)
+                        .ThenInclude(v => v.Product)
+                            .ThenInclude(p => p.ProductImages)
                     .Select(ci => new CartItemDTO
                     {
                         CartItemId = ci.CartItemId,
                         CartId = ci.CartId,
                         VariantId = ci.VariantId,
                         Quantity = ci.Quantity,
+                        UserId = ci.Cart.UserId,
+                        VariantSku = ci.Variant.Sku,
+                        Price = ci.Variant.Price ?? 0,
+                        TotalPrice = GetFinalPrice(ci.Variant, ci.Quantity ?? 0),
+                        ProductName = ci.Variant.Product.ProductName,
+                        Image = ci.Variant.Product.ProductImages
+                                    .OrderByDescending(pi => pi.IsCover ?? false)
+                                    .Select(pi => pi.ImageUrl)
+                                    .FirstOrDefault(),
                         CreatedAt = ci.CreatedAt
                     })
                     .ToListAsync();
-
-                if (items.Count == 0)
-                    return Ok(new { message = "No cart items found.", data = new List<CartItemDTO>() });
 
                 return Ok(items);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    message = "An error occurred while fetching cart items.",
-                    error = ex.Message
-                });
+                return StatusCode(500, new { message = "Error fetching cart items.", error = ex.Message });
             }
         }
 
-        // ================= GET BY ID =================
+        // ================= GET CART ITEM BY ID =================
         [HttpGet("{id}")]
         public async Task<IActionResult> GetCartItemById(int id)
         {
             try
             {
-                var item = await _context.CartItems
-                    .Where(ci => ci.CartItemId == id)
-                    .Select(ci => new CartItemDTO
-                    {
-                        CartItemId = ci.CartItemId,
-                        CartId = ci.CartId,
-                        VariantId = ci.VariantId,
-                        Quantity = ci.Quantity,
-                        CreatedAt = ci.CreatedAt
-                    })
-                    .FirstOrDefaultAsync();
-
+                var item = await GetCartItemDTO(id);
                 if (item == null)
                     return NotFound(new { message = "Cart item not found." });
 
@@ -128,21 +123,21 @@ namespace Backend_Api.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    message = "An error occurred while fetching the cart item.",
-                    error = ex.Message
-                });
+                return StatusCode(500, new { message = "Error fetching cart item.", error = ex.Message });
             }
         }
 
-        // ================= GET BY CART =================
+        // ================= GET ITEMS BY CART ID (WITH SUBTOTAL) =================
         [HttpGet("cart/{cartId}")]
         public async Task<IActionResult> GetItemsByCartId(int cartId)
         {
             try
             {
                 var items = await _context.CartItems
+                    .Include(ci => ci.Cart)
+                    .Include(ci => ci.Variant)
+                        .ThenInclude(v => v.Product)
+                            .ThenInclude(p => p.ProductImages)
                     .Where(ci => ci.CartId == cartId)
                     .Select(ci => new CartItemDTO
                     {
@@ -150,36 +145,63 @@ namespace Backend_Api.Controllers
                         CartId = ci.CartId,
                         VariantId = ci.VariantId,
                         Quantity = ci.Quantity,
+                        UserId = ci.Cart.UserId,
+                        VariantSku = ci.Variant.Sku,
+                        Price = ci.Variant.Price ?? 0,
+                        TotalPrice = GetFinalPrice(ci.Variant, ci.Quantity ?? 0),
+                        ProductName = ci.Variant.Product.ProductName,
+                        Image = ci.Variant.Product.ProductImages
+                                    .OrderByDescending(pi => pi.IsCover ?? false)
+                                    .Select(pi => pi.ImageUrl)
+                                    .FirstOrDefault(),
                         CreatedAt = ci.CreatedAt
                     })
                     .ToListAsync();
 
-                if (items.Count == 0)
-                    return NotFound(new { message = "No items found for this cart." });
+                var subtotal = items.Sum(i => i.TotalPrice);
+                var totalItems = items.Sum(i => i.Quantity ?? 0);
 
-                return Ok(items);
+                return Ok(new { message = "Cart fetched successfully.", subtotal, totalItems, items });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    message = "An error occurred while fetching cart items.",
-                    error = ex.Message
-                });
+                return StatusCode(500, new { message = "Error fetching cart items.", error = ex.Message });
             }
         }
 
-        // ================= UPDATE =================
+        // ================= GET CART SUMMARY BY USER ID (AUTO CREATE IF NONE) =================
+        [HttpGet("user/{userId}")]
+        public async Task<IActionResult> GetCartByUserId(int userId)
+        {
+            try
+            {
+                var cart = await _context.Carts
+                    .FirstOrDefaultAsync(c => c.UserId == userId);
+
+                if (cart == null)
+                {
+                    // Automatically create new cart for user
+                    cart = new Cart { UserId = userId, CreatedAt = DateTime.UtcNow };
+                    _context.Carts.Add(cart);
+                    await _context.SaveChangesAsync();
+                }
+
+                return await GetItemsByCartId(cart.CartId);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error fetching user cart.", error = ex.Message });
+            }
+        }
+
+        // ================= UPDATE CART ITEM =================
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateCartItem(int id, [FromBody] AddCartItemDTO model)
         {
             try
             {
-                if (model == null)
-                    return BadRequest(new { message = "Invalid cart item data." });
-
-                if (model.Quantity <= 0)
-                    return BadRequest(new { message = "Quantity must be greater than zero." });
+                if (model == null || model.Quantity <= 0)
+                    return BadRequest(new { message = "Invalid cart item data or quantity must be > 0." });
 
                 var item = await _context.CartItems.FindAsync(id);
                 if (item == null)
@@ -188,19 +210,16 @@ namespace Backend_Api.Controllers
                 item.Quantity = model.Quantity;
                 await _context.SaveChangesAsync();
 
-                return Ok(new { message = "Cart item updated successfully." });
+                var updatedItem = await GetCartItemDTO(id);
+                return Ok(new { message = "Cart item updated successfully.", data = updatedItem });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    message = "An error occurred while updating the cart item.",
-                    error = ex.Message
-                });
+                return StatusCode(500, new { message = "Error updating cart item.", error = ex.Message });
             }
         }
 
-        // ================= DELETE =================
+        // ================= DELETE CART ITEM =================
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteCartItem(int id)
         {
@@ -217,11 +236,7 @@ namespace Backend_Api.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    message = "An error occurred while deleting the cart item.",
-                    error = ex.Message
-                });
+                return StatusCode(500, new { message = "Error deleting cart item.", error = ex.Message });
             }
         }
 
@@ -231,11 +246,8 @@ namespace Backend_Api.Controllers
         {
             try
             {
-                var items = await _context.CartItems
-                    .Where(ci => ci.CartId == cartId)
-                    .ToListAsync();
-
-                if (items.Count == 0)
+                var items = await _context.CartItems.Where(ci => ci.CartId == cartId).ToListAsync();
+                if (!items.Any())
                     return NotFound(new { message = "No items found in this cart." });
 
                 _context.CartItems.RemoveRange(items);
@@ -245,12 +257,58 @@ namespace Backend_Api.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new
-                {
-                    message = "An error occurred while clearing the cart.",
-                    error = ex.Message
-                });
+                return StatusCode(500, new { message = "Error clearing cart.", error = ex.Message });
             }
+        }
+
+        // ================= PRIVATE HELPER: FETCH CART ITEM DTO =================
+        private async Task<CartItemDTO?> GetCartItemDTO(int cartItemId)
+        {
+            return await _context.CartItems
+                .Include(ci => ci.Cart)
+                .Include(ci => ci.Variant)
+                    .ThenInclude(v => v.Product)
+                        .ThenInclude(p => p.ProductImages)
+                .Where(ci => ci.CartItemId == cartItemId)
+                .Select(ci => new CartItemDTO
+                {
+                    CartItemId = ci.CartItemId,
+                    CartId = ci.CartId,
+                    VariantId = ci.VariantId,
+                    Quantity = ci.Quantity,
+                    UserId = ci.Cart.UserId,
+                    VariantSku = ci.Variant.Sku,
+                    Price = ci.Variant.Price ?? 0,
+                    TotalPrice = GetFinalPrice(ci.Variant, ci.Quantity ?? 0),
+                    ProductName = ci.Variant.Product.ProductName,
+                    Image = ci.Variant.Product.ProductImages
+                                .OrderByDescending(pi => pi.IsCover ?? false)
+                                .Select(pi => pi.ImageUrl)
+                                .FirstOrDefault(),
+                    CreatedAt = ci.CreatedAt
+                })
+                .FirstOrDefaultAsync();
+        }
+
+        // ================= PRIVATE HELPER: FINAL PRICE CALCULATOR =================
+        private decimal GetFinalPrice(ProductVariant v, int quantity)
+        {
+            decimal price = v.Price ?? 0;
+            var now = DateTime.UtcNow;
+
+            // Check discount validity
+            if (v.DiscountStart.HasValue && now < v.DiscountStart) { }
+            else if (v.DiscountEnd.HasValue && now > v.DiscountEnd) { }
+            else
+            {
+                if (v.DiscountPercentage.HasValue && v.DiscountPercentage > 0)
+                    price -= price * (v.DiscountPercentage.Value / 100);
+
+                if (v.DiscountAmount.HasValue && v.DiscountAmount > 0)
+                    price -= v.DiscountAmount.Value;
+            }
+
+            return (price < 0 ? 0 : price) * quantity;
         }
     }
 }

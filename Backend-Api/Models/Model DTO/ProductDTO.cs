@@ -20,6 +20,10 @@ namespace Backend_Api.Models
         public List<ProductSpecificationDTO> Specifications { get; set; } = new();
 
         public double AverageRating { get; set; }
+
+        public decimal MinPrice { get; set; }
+        public int? MinPriceVariantId { get; set; }
+
         public DateTime? CreatedAt { get; internal set; }
         public DateTime? UpdatedAt { get; internal set; }
     }

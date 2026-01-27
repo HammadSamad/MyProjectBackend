@@ -42,12 +42,15 @@ namespace Backend_Api.Controllers
         {
             try
             {
+                // Validate model
                 if (!ModelState.IsValid)
                     return BadRequest(new { message = "Invalid signup data.", errors = ModelState });
 
+                //  Check if username or email already exists
                 if (await _context.Users.AnyAsync(u => u.Username == dto.Username || u.Email == dto.Email))
                     return BadRequest(new { message = "Username or Email already exists." });
 
+                // Create user
                 var user = new User
                 {
                     Username = dto.Username,
@@ -62,42 +65,43 @@ namespace Backend_Api.Controllers
                     CreatedAt = DateTime.UtcNow
                 };
 
-                // Save user first
                 _context.Users.Add(user);
-                await _context.SaveChangesAsync();
+                await _context.SaveChangesAsync(); // Save to get UserId
 
-                // Create profile
+                // Create user profile
                 _context.UserProfiles.Add(new UserProfile
                 {
                     UserId = user.UserId,
                     CreatedAt = DateTime.UtcNow
                 });
 
-                // -----------------------------
-                // Assign default role = User
-                // -----------------------------
-                var roleId = await _context.Roles
-                    .Where(r => r.RoleName == "User")
-                    .Select(r => r.RoleId)
-                    .FirstOrDefaultAsync();
+                // Ensure default role exists
+                var role = await _context.Roles.FirstOrDefaultAsync(r => r.RoleName == "User");
+                if (role == null)
+                {
+                    role = new Role
+                    {
+                        RoleName = "User",
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.Roles.Add(role);
+                    await _context.SaveChangesAsync(); // Save to get RoleId
+                }
 
-                if (roleId == 0)
-                    return StatusCode(500, new { message = "Default role 'User' not found in database." });
-
+                // Assign role to user
                 _context.UserRoles.Add(new UserRole
                 {
                     UserId = user.UserId,
-                    RoleId = roleId
+                    RoleId = role.RoleId
                 });
 
-                // -----------------------------
-                // OTP Handling
-                // -----------------------------
                 // Invalidate old OTPs for this user
                 var oldOtps = await _context.UserVerifications
                     .Where(v => v.UserId == user.UserId && v.Channel == "email" && !(v.IsUsed ?? false))
                     .ToListAsync();
-                foreach (var o in oldOtps) o.IsUsed = true;
+
+                foreach (var o in oldOtps)
+                    o.IsUsed = true;
 
                 // Generate OTP for email verification
                 string otp = OTPHelper.GenerateOTP();
@@ -112,13 +116,16 @@ namespace Backend_Api.Controllers
                 });
 
                 await _context.SaveChangesAsync();
+
+                // Send OTP email
                 await _emailService.SendEmailAsync(user.Email, "Verify your account", $"Your OTP is: {otp}");
 
+                // Return success
                 return Ok(new
                 {
                     message = "User registered successfully. Verification OTP sent to email.",
                     userId = user.UserId,
-                    roles = new[] { "User" }   // Default role returned to frontend
+                    roles = new[] { "User" } // Default role returned to frontend
                 });
             }
             catch (Exception ex)

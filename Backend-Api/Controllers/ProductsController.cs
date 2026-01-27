@@ -292,56 +292,77 @@ namespace Backend_Api.Controllers
         // =========================================================
         private List<ProductDTO> MapToDTO(List<Product> products)
         {
-            return products.Select(p => new ProductDTO
+            return products.Select(p =>
             {
-                ProductId = p.ProductId,
-                ProductName = p.ProductName,
-                Description = p.Description,
-                WarrantyMonths = p.WarrantyMonths,
-                IsActive = p.IsActive,
-                CreatedAt = p.CreatedAt,
-                UpdatedAt = p.UpdatedAt,
-                BrandName = p.Brand?.BrandName,
-                CategoryName = p.Category?.CategoryName,
+                // 🔥 Find cheapest variant for this product
+                var cheapestVariant = p.ProductVariants
+                    .OrderBy(v => CalculateFinalPrice(v))
+                    .FirstOrDefault();
 
-                CoverImage = p.ProductImages.FirstOrDefault(i => i.IsCover == true)?.ImageUrl,
-                GalleryImages = p.ProductImages.Where(i => i.IsCover != true).Select(i => i.ImageUrl!).ToList(),
-
-                Variants = p.ProductVariants.Select(v => new ProductVariantDTO
+                return new ProductDTO
                 {
-                    VariantId = v.VariantId,
-                    Sku = v.Sku,
-                    Price = v.Price,
-                    FinalPrice = CalculateFinalPrice(v),
-                    Stock = v.Stock,
-                    DiscountPercentage = v.DiscountPercentage,
-                    DiscountAmount = v.DiscountAmount,
-                    DiscountStart = v.DiscountStart,
-                    DiscountEnd = v.DiscountEnd,
-                    VariantSpecifications = v.VariantSpecificationOptions
-                .Select(vso => new VariantSpecificationOptionDTO
-                {
-                    OptionId = vso.OptionId,
-                    SpecificationName = vso.Option.Specification.SpecificationName,
-                    OptionValue = vso.Option.OptionValue
-                }).ToList()
-                }).ToList(),
-                Specifications = p.ProductSpecificationValues.Select(psv => new ProductSpecificationDTO
-                {
-                    SpecificationName = psv.Specification.SpecificationName,
-                    DataType = psv.Specification.DataType,
+                    ProductId = p.ProductId,
+                    ProductName = p.ProductName,
+                    Description = p.Description,
+                    WarrantyMonths = p.WarrantyMonths,
+                    IsActive = p.IsActive,
+                    CreatedAt = p.CreatedAt,
+                    UpdatedAt = p.UpdatedAt,
 
-                    ValueText = psv.ValueText,
-                    ValueNumber = psv.ValueNumber,
-                    ValueBool = psv.ValueBool,
+                    BrandName = p.Brand?.BrandName,
+                    CategoryName = p.Category?.CategoryName,
 
-                    OptionValue = psv.Option != null ? psv.Option.OptionValue : null
-                }).ToList(),
-                AverageRating = p.ProductReviews.Any()
-                    ? Math.Round(p.ProductReviews.Average(r => r.Rating ?? 0), 1)
-                    : 0
+                    CoverImage = p.ProductImages.FirstOrDefault(i => i.IsCover == true)?.ImageUrl,
+                    GalleryImages = p.ProductImages
+                        .Where(i => i.IsCover != true)
+                        .Select(i => i.ImageUrl!)
+                        .ToList(),
+
+                    // ✅ Minimum price information
+                    MinPrice = cheapestVariant != null
+                        ? CalculateFinalPrice(cheapestVariant)
+                        : 0,
+
+                    MinPriceVariantId = cheapestVariant?.VariantId,
+
+                    Variants = p.ProductVariants.Select(v => new ProductVariantDTO
+                    {
+                        VariantId = v.VariantId,
+                        Sku = v.Sku,
+                        Price = v.Price,
+                        FinalPrice = CalculateFinalPrice(v),
+                        Stock = v.Stock,
+                        DiscountPercentage = v.DiscountPercentage,
+                        DiscountAmount = v.DiscountAmount,
+                        DiscountStart = v.DiscountStart,
+                        DiscountEnd = v.DiscountEnd,
+
+                        VariantSpecifications = v.VariantSpecificationOptions
+                            .Select(vso => new VariantSpecificationOptionDTO
+                            {
+                                OptionId = vso.OptionId,
+                                SpecificationName = vso.Option.Specification.SpecificationName,
+                                OptionValue = vso.Option.OptionValue
+                            }).ToList()
+                    }).ToList(),
+
+                    Specifications = p.ProductSpecificationValues.Select(psv => new ProductSpecificationDTO
+                    {
+                        SpecificationName = psv.Specification.SpecificationName,
+                        DataType = psv.Specification.DataType,
+                        ValueText = psv.ValueText,
+                        ValueNumber = psv.ValueNumber,
+                        ValueBool = psv.ValueBool,
+                        OptionValue = psv.Option != null ? psv.Option.OptionValue : null
+                    }).ToList(),
+
+                    AverageRating = p.ProductReviews.Any()
+                        ? Math.Round(p.ProductReviews.Average(r => r.Rating ?? 0), 1)
+                        : 0
+                };
             }).ToList();
         }
+
 
         // =========================================================
         // FINAL PRICE CALCULATOR

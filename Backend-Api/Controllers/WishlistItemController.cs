@@ -3,6 +3,9 @@ using Backend_Api.Models;
 using Backend_Api.Models.Model_DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Backend_Api.Controllers
 {
@@ -17,40 +20,36 @@ namespace Backend_Api.Controllers
             _context = context;
         }
 
-        // ============================
-        // GET: api/WishlistItem/wishlist/{wishlistId}
-        // Get all items in a wishlist
-        // ============================
-        [HttpGet("wishlist/{wishlistId}")]
-        public async Task<IActionResult> GetItemsByWishlist(int wishlistId)
+        [HttpGet("user/{userId}")]
+        public async Task<IActionResult> GetUserWishlist(int userId)
         {
             try
             {
-                var items = await _context.WishlistItems
-                    .Where(x => x.WishlistId == wishlistId)
-                    .Select(x => new WishlistItemDTO
-                    {
-                        WishlistItemId = x.WishlistItemId,
-                        WishlistId = x.WishlistId,
-                        VariantId = x.VariantId
-                    })
-                    .ToListAsync();
+                var wishlist = await _context.Wishlists
+                    .Include(w => w.WishlistItems)
+                        .ThenInclude(wi => wi.Variant)
+                            .ThenInclude(v => v.Product)
+                                .ThenInclude(p => p.ProductImages)
+                    .FirstOrDefaultAsync(w => w.UserId == userId);
 
-                if (items.Count == 0)
-                    return NotFound(new { error = "No items found in this wishlist." });
+                if (wishlist == null)
+                    return NotFound(new { error = "Wishlist not found." });
 
-                return Ok(items);
+                var wishlistDTO = new
+                {
+                    wishlist.WishlistId,
+                    wishlist.UserId,
+                    Items = wishlist.WishlistItems.Select(MapToDTO).ToList()
+                };
+
+                return Ok(wishlistDTO);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to retrieve wishlist items.", details = ex.Message });
+                return StatusCode(500, new { error = "Failed to retrieve wishlist.", details = ex.Message });
             }
         }
 
-        // ============================
-        // POST: api/WishlistItem
-        // Add item to wishlist
-        // ============================
         [HttpPost]
         public async Task<IActionResult> AddItem(AddWishlistItemDTO model)
         {
@@ -59,34 +58,63 @@ namespace Backend_Api.Controllers
 
             try
             {
-                // Check wishlist exists
-                var wishlist = await _context.Wishlists.FindAsync(model.WishlistId);
-                if (wishlist == null)
-                    return NotFound(new { error = "Wishlist not found." });
+                var wishlist = await _context.Wishlists
+                    .Include(w => w.WishlistItems)
+                        .ThenInclude(wi => wi.Variant)
+                            .ThenInclude(v => v.Product)
+                                .ThenInclude(p => p.ProductImages)
+                    .FirstOrDefaultAsync(w => w.UserId == model.UserId);
 
-                // Prevent duplicate product in wishlist
+                if (wishlist == null)
+                {
+                    wishlist = new Wishlist
+                    {
+                        UserId = model.UserId,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.Wishlists.Add(wishlist);
+                    await _context.SaveChangesAsync();
+                }
+
+                var variant = await _context.ProductVariants
+                    .Include(v => v.Product)
+                        .ThenInclude(p => p.ProductImages)
+                    .FirstOrDefaultAsync(v => v.VariantId == model.VariantId);
+
+                if (variant == null)
+                    return NotFound(new { error = "Product variant not found." });
+
                 bool exists = await _context.WishlistItems
-                    .AnyAsync(x => x.WishlistId == model.WishlistId && x.VariantId == model.VariantId);
+                    .AnyAsync(x => x.WishlistId == wishlist.WishlistId && x.VariantId == variant.VariantId);
 
                 if (exists)
                     return BadRequest(new { error = "This product already exists in the wishlist." });
 
                 var item = new WishlistItem
                 {
-                    WishlistId = model.WishlistId,
-                    VariantId = model.VariantId,
+                    WishlistId = wishlist.WishlistId,
+                    VariantId = variant.VariantId,
                     CreatedAt = DateTime.UtcNow
                 };
 
                 _context.WishlistItems.Add(item);
                 await _context.SaveChangesAsync();
 
-                return Ok(new WishlistItemDTO
+                var allItems = await _context.WishlistItems
+                    .Where(wi => wi.WishlistId == wishlist.WishlistId)
+                    .Include(wi => wi.Variant)
+                        .ThenInclude(v => v.Product)
+                            .ThenInclude(p => p.ProductImages)
+                    .ToListAsync();
+
+                var wishlistDTO = new
                 {
-                    WishlistItemId = item.WishlistItemId,
-                    WishlistId = item.WishlistId,
-                    VariantId = item.VariantId
-                });
+                    wishlist.WishlistId,
+                    wishlist.UserId,
+                    Items = allItems.Select(MapToDTO).ToList()
+                };
+
+                return Ok(wishlistDTO);
             }
             catch (Exception ex)
             {
@@ -94,16 +122,17 @@ namespace Backend_Api.Controllers
             }
         }
 
-        // ============================
-        // DELETE: api/WishlistItem/{id}
-        // Remove item from wishlist
-        // ============================
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteItem(int id)
         {
             try
             {
-                var item = await _context.WishlistItems.FindAsync(id);
+                var item = await _context.WishlistItems
+                    .Include(wi => wi.Variant)
+                    .ThenInclude(v => v.Product)
+                    .ThenInclude(p => p.ProductImages)
+                    .FirstOrDefaultAsync(x => x.WishlistItemId == id);
+
                 if (item == null)
                     return NotFound(new { error = "Wishlist item not found." });
 
@@ -118,10 +147,6 @@ namespace Backend_Api.Controllers
             }
         }
 
-        // ============================
-        // DELETE: api/WishlistItem/wishlist/{wishlistId}/variant/{variantId}
-        // Alternative remove using WishlistId + VariantId
-        // ============================
         [HttpDelete("wishlist/{wishlistId}/variant/{variantId}")]
         public async Task<IActionResult> DeleteByVariant(int wishlistId, int variantId)
         {
@@ -142,6 +167,40 @@ namespace Backend_Api.Controllers
             {
                 return StatusCode(500, new { error = "Failed to remove item from wishlist.", details = ex.Message });
             }
+        }
+
+        private WishlistItemDTO MapToDTO(WishlistItem wi)
+        {
+            var variant = wi.Variant;
+            var product = variant.Product;
+
+            // ✅ Fix nullable bool issue here
+            string coverImage = product.ProductImages.FirstOrDefault(i => i.IsCover == true)?.ImageUrl ?? "";
+
+            decimal finalPrice = variant.Price ?? 0;
+            var now = DateTime.UtcNow;
+
+            if ((!variant.DiscountStart.HasValue || variant.DiscountStart.Value <= now) &&
+                (!variant.DiscountEnd.HasValue || variant.DiscountEnd.Value >= now))
+            {
+                if (variant.DiscountPercentage.HasValue && variant.DiscountPercentage.Value > 0)
+                    finalPrice -= finalPrice * (variant.DiscountPercentage.Value / 100);
+
+                if (variant.DiscountAmount.HasValue && variant.DiscountAmount.Value > 0)
+                    finalPrice -= variant.DiscountAmount.Value;
+            }
+
+            if (finalPrice < 0) finalPrice = 0;
+
+            return new WishlistItemDTO
+            {
+                WishlistItemId = wi.WishlistItemId,
+                WishlistId = wi.WishlistId,
+                VariantId = wi.VariantId,
+                ProductName = product.ProductName ?? "",
+                Image = coverImage,
+                Price = finalPrice
+            };
         }
     }
 }

@@ -31,7 +31,7 @@ namespace Backend_Api.Controllers
                     .FirstOrDefaultAsync(c => c.UserId == model.UserId);
 
                 if (existingCart != null)
-                    return BadRequest(new { message = "Cart already exists for this user." });
+                    return BadRequest(new { message = "Cart already exists for this user.", cartId = existingCart.CartId });
 
                 var cart = new Cart
                 {
