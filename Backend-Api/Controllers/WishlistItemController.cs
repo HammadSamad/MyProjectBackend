@@ -21,7 +21,7 @@ namespace Backend_Api.Controllers
         }
 
         // =====================================================
-        // GET USER WISHLIST WITH PRODUCT + VARIANT + SPECS
+        // GET USER WISHLIST WITH PRODUCT + VARIANT + SPECS (RAM, Storage, Color)
         // =====================================================
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetUserWishlist(int userId)
@@ -31,15 +31,8 @@ namespace Backend_Api.Controllers
                 var wishlist = await _context.Wishlists
                     .Include(w => w.WishlistItems)
                         .ThenInclude(wi => wi.Variant)
-                            .ThenInclude(v => v.VariantSpecificationOptions)
-                                .ThenInclude(vso => vso.Option)
-                                    .ThenInclude(o => o.Specification)
-
-                    .Include(w => w.WishlistItems)
-                        .ThenInclude(wi => wi.Variant)
                             .ThenInclude(v => v.Product)
                                 .ThenInclude(p => p.ProductImages)
-
                     .FirstOrDefaultAsync(w => w.UserId == userId);
 
                 if (wishlist == null)
@@ -112,15 +105,8 @@ namespace Backend_Api.Controllers
                 var wishlist = await _context.Wishlists
                     .Include(w => w.WishlistItems)
                         .ThenInclude(wi => wi.Variant)
-                            .ThenInclude(v => v.VariantSpecificationOptions)
-                                .ThenInclude(vso => vso.Option)
-                                    .ThenInclude(o => o.Specification)
-
-                    .Include(w => w.WishlistItems)
-                        .ThenInclude(wi => wi.Variant)
                             .ThenInclude(v => v.Product)
                                 .ThenInclude(p => p.ProductImages)
-
                     .FirstOrDefaultAsync(w => w.UserId == model.UserId);
 
                 if (wishlist == null)
@@ -135,9 +121,6 @@ namespace Backend_Api.Controllers
                 }
 
                 var variant = await _context.ProductVariants
-                    .Include(v => v.VariantSpecificationOptions)
-                        .ThenInclude(vso => vso.Option)
-                            .ThenInclude(o => o.Specification)
                     .Include(v => v.Product)
                         .ThenInclude(p => p.ProductImages)
                     .FirstOrDefaultAsync(v => v.VariantId == model.VariantId);
@@ -161,13 +144,9 @@ namespace Backend_Api.Controllers
                 _context.WishlistItems.Add(item);
                 await _context.SaveChangesAsync();
 
+                // Reload wishlist items after adding
                 var allItems = await _context.WishlistItems
                     .Where(wi => wi.WishlistId == wishlist.WishlistId)
-                    .Include(wi => wi.Variant)
-                        .ThenInclude(v => v.VariantSpecificationOptions)
-                            .ThenInclude(vso => vso.Option)
-                                .ThenInclude(o => o.Specification)
-
                     .Include(wi => wi.Variant)
                         .ThenInclude(v => v.Product)
                             .ThenInclude(p => p.ProductImages)
@@ -242,15 +221,14 @@ namespace Backend_Api.Controllers
         }
 
         // =====================================================
-        // DTO MAPPER (NOW INCLUDES VARIANT SPECIFICATIONS)
+        // DTO MAPPER (ONLY IMAGE, NAME, PRICE + RAM/Storage/Color)
         // =====================================================
         private WishlistItemDTO MapToDTO(WishlistItem wi)
         {
             var variant = wi.Variant;
             var product = variant.Product;
 
-            string coverImage =
-                product.ProductImages.FirstOrDefault(i => i.IsCover == true)?.ImageUrl ?? "";
+            string coverImage = product.ProductImages.FirstOrDefault(i => i.IsCover == true)?.ImageUrl ?? "";
 
             decimal finalPrice = variant.Price ?? 0;
             var now = DateTime.UtcNow;
@@ -267,6 +245,20 @@ namespace Backend_Api.Controllers
 
             if (finalPrice < 0) finalPrice = 0;
 
+            // Only include RAM, Storage, Color specifications
+            var filteredSpecs = _context.VariantSpecificationOptions
+                .Where(vso => vso.VariantId == variant.VariantId &&
+                             (vso.Option.Specification.SpecificationName == "RAM" ||
+                              vso.Option.Specification.SpecificationName == "Storage" ||
+                              vso.Option.Specification.SpecificationName == "Color"))
+                .Select(vso => new VariantSpecificationOptionDTO
+                {
+                    OptionId = vso.OptionId,
+                    SpecificationName = vso.Option.Specification.SpecificationName,
+                    OptionValue = vso.Option.OptionValue
+                })
+                .ToList();
+
             return new WishlistItemDTO
             {
                 WishlistItemId = wi.WishlistItemId,
@@ -275,16 +267,7 @@ namespace Backend_Api.Controllers
                 ProductName = product.ProductName ?? "",
                 Image = coverImage,
                 Price = finalPrice,
-
-                // 🔥 Variant Specifications Included
-                VariantSpecifications = variant.VariantSpecificationOptions
-                    .Select(vso => new VariantSpecificationOptionDTO
-                    {
-                        OptionId = vso.OptionId,
-                        SpecificationName = vso.Option.Specification.SpecificationName,
-                        OptionValue = vso.Option.OptionValue
-                    })
-                    .ToList()
+                VariantSpecifications = filteredSpecs
             };
         }
     }
