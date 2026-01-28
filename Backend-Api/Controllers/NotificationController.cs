@@ -23,12 +23,12 @@ namespace Backend_Api.Controllers
 
         // ================= GET ALL WITH PAGINATION, FILTER & SORT =================
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<NotificationDTO>>> GetAll(
+        public async Task<ActionResult> GetAll(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
             [FromQuery] bool? isRead = null,
-            [FromQuery] string? sortBy = "CreatedAt", // CreatedAt or Title
-            [FromQuery] string? sortOrder = "desc") // asc or desc
+            [FromQuery] string? sortBy = "CreatedAt",
+            [FromQuery] string? sortOrder = "desc")
         {
             try
             {
@@ -38,27 +38,22 @@ namespace Backend_Api.Controllers
 
                 int userId = int.Parse(userIdClaim);
 
-                // Base query: notifications for user or global
                 var query = _context.Notifications
                     .Where(n => n.UserId == userId || n.TargetAudience == "All");
 
-                // Optional filter by read/unread
                 if (isRead.HasValue)
                     query = query.Where(n => n.IsRead == isRead.Value);
 
-                // Sorting
                 query = (sortBy?.ToLower(), sortOrder?.ToLower()) switch
                 {
                     ("title", "asc") => query.OrderBy(n => n.Title),
                     ("title", "desc") => query.OrderByDescending(n => n.Title),
                     ("createdat", "asc") => query.OrderBy(n => n.CreatedAt),
-                    _ => query.OrderByDescending(n => n.CreatedAt) // default descending CreatedAt
+                    _ => query.OrderByDescending(n => n.CreatedAt)
                 };
 
-                // Total count for pagination
                 var totalCount = await query.CountAsync();
 
-                // Paginate
                 var notifications = await query
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
@@ -68,7 +63,9 @@ namespace Backend_Api.Controllers
                         UserId = n.UserId,
                         Title = n.Title,
                         Message = n.Message,
-                        IsRead = n.IsRead
+                        Type = n.Type,
+                        IsRead = n.IsRead,
+                        CreatedAt = n.CreatedAt
                     })
                     .ToListAsync();
 
@@ -107,7 +104,9 @@ namespace Backend_Api.Controllers
                     UserId = notification.UserId,
                     Title = notification.Title,
                     Message = notification.Message,
-                    IsRead = notification.IsRead
+                    Type = notification.Type,
+                    IsRead = notification.IsRead,
+                    CreatedAt = notification.CreatedAt
                 };
             }
             catch (Exception ex)
@@ -125,17 +124,17 @@ namespace Backend_Api.Controllers
                 if (model == null || string.IsNullOrWhiteSpace(model.Title) || string.IsNullOrWhiteSpace(model.Message))
                     return BadRequest(new { error = "Title and Message are required." });
 
-                int? userId = null;
                 var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-                if (userIdClaim != null) userId = int.Parse(userIdClaim);
+                int? currentUserId = userIdClaim != null ? int.Parse(userIdClaim) : null;
 
                 var notification = new Notification
                 {
-                    UserId = model.UserId ?? userId,
+                    UserId = model.UserId ?? currentUserId,
                     Title = model.Title,
                     Message = model.Message,
+                    Type = model.Type,
                     TargetAudience = model.TargetAudience,
-                    IsRead = false,
+                    IsRead = model.IsRead ?? false,
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -148,7 +147,9 @@ namespace Backend_Api.Controllers
                     UserId = notification.UserId,
                     Title = notification.Title,
                     Message = notification.Message,
-                    IsRead = notification.IsRead
+                    Type = notification.Type,
+                    IsRead = notification.IsRead,
+                    CreatedAt = notification.CreatedAt
                 };
 
                 return CreatedAtAction(nameof(GetById), new { id = notification.NotificationId }, dto);
@@ -175,6 +176,7 @@ namespace Backend_Api.Controllers
 
                 notification.Title = model.Title ?? notification.Title;
                 notification.Message = model.Message ?? notification.Message;
+                notification.Type = model.Type ?? notification.Type;
                 notification.TargetAudience = model.TargetAudience ?? notification.TargetAudience;
                 notification.IsRead = model.IsRead ?? notification.IsRead;
 
@@ -237,7 +239,7 @@ namespace Backend_Api.Controllers
             }
         }
 
-        // ================= MARK ALL AS READ (Optimized) =================
+        // ================= MARK ALL AS READ =================
         [HttpPut("mark-all-read")]
         public async Task<IActionResult> MarkAllAsRead()
         {
@@ -249,13 +251,9 @@ namespace Backend_Api.Controllers
 
                 int userId = int.Parse(userIdClaim);
 
-                // Optimized: update directly in DB
                 var updatedCount = await _context.Notifications
                     .Where(n => n.UserId == userId && n.IsRead == false)
                     .ExecuteUpdateAsync(n => n.SetProperty(p => p.IsRead, true));
-
-                if (updatedCount == 0)
-                    return Ok(new { message = "No unread notifications found." });
 
                 return Ok(new { message = "All notifications marked as read.", count = updatedCount });
             }
