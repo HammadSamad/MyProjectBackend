@@ -8,5 +8,8 @@
         public string ProductName { get; set; } = "";
         public string Image { get; set; } = "";
         public decimal Price { get; set; }
+
+        // Add variant specifications
+        public List<VariantSpecificationOptionDTO> VariantSpecifications { get; set; } = null!;
     }
 }
