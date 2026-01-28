@@ -24,7 +24,6 @@ namespace Backend_Api.Controllers
 
             var now = DateTime.UtcNow;
 
-            // If time based discount is defined but expired
             if (v.DiscountStart.HasValue && v.DiscountEnd.HasValue)
             {
                 if (now < v.DiscountStart || now > v.DiscountEnd)
@@ -35,7 +34,6 @@ namespace Backend_Api.Controllers
 
             if (v.DiscountPercentage.HasValue && v.DiscountPercentage > 0)
                 finalPrice -= finalPrice * (v.DiscountPercentage.Value / 100);
-
             else if (v.DiscountAmount.HasValue && v.DiscountAmount > 0)
                 finalPrice -= v.DiscountAmount.Value;
 
@@ -51,33 +49,35 @@ namespace Backend_Api.Controllers
             try
             {
                 var variants = await _context.ProductVariants
+                    .AsNoTracking()
                     .Include(v => v.VariantSpecificationOptions)
                         .ThenInclude(vso => vso.Option)
                             .ThenInclude(o => o.Specification)
-                    .Select(v => new ProductVariantDTO
-                    {
-                        VariantId = v.VariantId,
-                        Sku = v.Sku,
-                        Price = v.Price,
-                        FinalPrice = CalculateFinalPrice(v),
-                        Stock = v.Stock,
-                        DiscountPercentage = v.DiscountPercentage,
-                        DiscountAmount = v.DiscountAmount,
-                        DiscountStart = v.DiscountStart,
-                        DiscountEnd = v.DiscountEnd,
-                        Specifications = v.VariantSpecificationOptions
-                            .Select(vso => new VariantSpecificationOptionDTO
-                            {
-                                SpecificationName = vso.Option.Specification.SpecificationName,
-                                OptionValue = vso.Option.OptionValue
-                            }).ToList()
-                    })
                     .ToListAsync();
 
                 if (!variants.Any())
                     return NotFound("No variants found.");
 
-                return Ok(variants);
+                var dtoList = variants.Select(v => new ProductVariantDTO
+                {
+                    VariantId = v.VariantId,
+                    Sku = v.Sku,
+                    Price = v.Price,
+                    FinalPrice = CalculateFinalPrice(v),
+                    Stock = v.Stock,
+                    DiscountPercentage = v.DiscountPercentage,
+                    DiscountAmount = v.DiscountAmount,
+                    DiscountStart = v.DiscountStart,
+                    DiscountEnd = v.DiscountEnd,
+                    Specifications = v.VariantSpecificationOptions
+                        .Select(vso => new VariantSpecificationOptionDTO
+                        {
+                            SpecificationName = vso.Option?.Specification?.SpecificationName ?? string.Empty,
+                            OptionValue = vso.Option?.OptionValue ?? string.Empty
+                        }).ToList()
+                }).ToList();
+
+                return Ok(dtoList);
             }
             catch (Exception ex)
             {
@@ -94,6 +94,7 @@ namespace Backend_Api.Controllers
             try
             {
                 var v = await _context.ProductVariants
+                    .AsNoTracking()
                     .Include(v => v.VariantSpecificationOptions)
                         .ThenInclude(vso => vso.Option)
                             .ThenInclude(o => o.Specification)
@@ -113,11 +114,12 @@ namespace Backend_Api.Controllers
                     DiscountAmount = v.DiscountAmount,
                     DiscountStart = v.DiscountStart,
                     DiscountEnd = v.DiscountEnd,
-                    Specifications = v.VariantSpecificationOptions.Select(vso => new VariantSpecificationOptionDTO
-                    {
-                        SpecificationName = vso.Option.Specification.SpecificationName,
-                        OptionValue = vso.Option.OptionValue
-                    }).ToList()
+                    Specifications = v.VariantSpecificationOptions
+                        .Select(vso => new VariantSpecificationOptionDTO
+                        {
+                            SpecificationName = vso.Option?.Specification?.SpecificationName ?? string.Empty,
+                            OptionValue = vso.Option?.OptionValue ?? string.Empty
+                        }).ToList()
                 };
 
                 return Ok(dto);
@@ -142,8 +144,7 @@ namespace Backend_Api.Controllers
                 if (model.DiscountPercentage.HasValue && model.DiscountAmount.HasValue)
                     return BadRequest("Use either DiscountPercentage or DiscountAmount, not both.");
 
-                var productExists = await _context.Products.AnyAsync(p => p.ProductId == model.ProductId);
-                if (!productExists)
+                if (!await _context.Products.AnyAsync(p => p.ProductId == model.ProductId))
                     return NotFound($"Product with ID {model.ProductId} not found.");
 
                 var variant = new ProductVariant

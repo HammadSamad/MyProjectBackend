@@ -4,9 +4,6 @@ using Backend_Api.Models.Model_Create;
 using Backend_Api.Models.Model_DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace Backend_Api.Controllers
 {
@@ -23,7 +20,7 @@ namespace Backend_Api.Controllers
 
         // =====================================================
         // POST: api/ProductView
-        // Log a product view
+        // Log a product view (minimal)
         // =====================================================
         [HttpPost]
         public async Task<IActionResult> AddProductView([FromBody] CreateProductView model)
@@ -33,17 +30,6 @@ namespace Backend_Api.Controllers
 
             try
             {
-                var product = await _context.Products
-                    .Include(p => p.ProductImages)
-                    .FirstOrDefaultAsync(p => p.ProductId == model.ProductId);
-
-                if (product == null)
-                    return NotFound(new { error = "Product not found" });
-
-                var user = model.UserId.HasValue
-                    ? await _context.Users.FirstOrDefaultAsync(u => u.UserId == model.UserId.Value)
-                    : null;
-
                 var view = new ProductView
                 {
                     ProductId = model.ProductId,
@@ -54,23 +40,12 @@ namespace Backend_Api.Controllers
                 _context.ProductViews.Add(view);
                 await _context.SaveChangesAsync();
 
-                // Safe mapping to DTO
-                string? productImage = null;
-                if (product.ProductImages != null && product.ProductImages.Any())
+                var dto = new
                 {
-                    var coverImage = product.ProductImages.FirstOrDefault(i => i.IsCover.HasValue && i.IsCover.Value);
-                    productImage = coverImage?.ImageUrl ?? product.ProductImages.FirstOrDefault()?.ImageUrl;
-                }
-
-                var dto = new ProductViewDTO
-                {
-                    ViewId = view.ViewId,
-                    ProductId = view.ProductId,
-                    ProductName = product.ProductName ?? "Unknown",
-                    ProductImage = productImage,
-                    UserId = view.UserId,
-                    Username = user?.Username ?? "Guest",
-                    ViewedAt = view.ViewedAt
+                    view.ViewId,
+                    view.ProductId,
+                    view.UserId,
+                    view.ViewedAt
                 };
 
                 return Ok(new { message = "Product view logged successfully", data = dto });
@@ -83,7 +58,7 @@ namespace Backend_Api.Controllers
 
         // =====================================================
         // GET: api/ProductView
-        // Fetch all product views
+        // Fetch all product views with product data
         // =====================================================
         [HttpGet]
         public async Task<IActionResult> GetAllViews()
@@ -128,14 +103,14 @@ namespace Backend_Api.Controllers
         }
 
         // =====================================================
-        // DELETE: api/ProductView/cleanup/7
+        // DELETE: api/ProductView/cleanup/{days}
         // Delete old product views older than X days
         // =====================================================
         [HttpDelete("cleanup/{days}")]
         public async Task<IActionResult> CleanupOldViews(int days)
         {
-            if (days <= 0)
-                return BadRequest(new { error = "Days parameter must be greater than zero" });
+            if (days < 7)
+                return BadRequest(new { error = "Days parameter must be at least 7." });
 
             try
             {
@@ -162,5 +137,6 @@ namespace Backend_Api.Controllers
                 return StatusCode(500, new { error = "Failed to delete old product views", details = ex.Message });
             }
         }
+
     }
 }
