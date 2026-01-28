@@ -50,6 +50,43 @@ namespace Backend_Api.Controllers
             }
         }
 
+        //  wishlistId + variantId list
+        // ============================
+        [HttpGet("wishlist/{wishlistId}")]
+        public async Task<IActionResult> GetWishlistVariants(int wishlistId)
+        {
+            if (wishlistId <= 0)
+                return BadRequest(new { message = "Invalid wishlistId." });
+
+            try
+            {
+                var exists = await _context.Wishlists
+                    .AnyAsync(w => w.WishlistId == wishlistId);
+
+                if (!exists)
+                    return NotFound(new { message = "Wishlist not found." });
+
+                var variants = await _context.WishlistItems
+                    .Where(wi => wi.WishlistId == wishlistId)
+                    .Select(wi => wi.VariantId)
+                    .ToListAsync();
+
+                return Ok(new
+                {
+                    wishlistId = wishlistId,
+                    variantIds = variants
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    message = "Failed to retrieve wishlist variants.",
+                    details = ex.Message
+                });
+            }
+        }
+
         [HttpPost]
         public async Task<IActionResult> AddItem(AddWishlistItemDTO model)
         {

@@ -26,6 +26,9 @@ namespace Backend_Api.Controllers
             if (model == null)
                 return BadRequest(new { message = "Request body cannot be empty." });
 
+            if (model.UserId <= 0)
+                return BadRequest(new { message = "Invalid User ID." });
+
             if (model.CityId <= 0)
                 return BadRequest(new { message = "Invalid City ID." });
 
@@ -34,16 +37,19 @@ namespace Backend_Api.Controllers
 
             try
             {
-                // Check City exists
+                var userExists = await _context.Users.AnyAsync(u => u.UserId == model.UserId);
+                if (!userExists)
+                    return BadRequest(new { message = "User does not exist." });
+
                 var cityExists = await _context.Cities.AnyAsync(c => c.CityId == model.CityId);
                 if (!cityExists)
-                    return BadRequest(new { message = "Selected city does not exist." });
+                    return BadRequest(new { message = "City does not exist." });
 
-                // If this is default address, unset previous default addresses
+                // Default address per user
                 if (model.IsDefault.GetValueOrDefault())
                 {
                     var defaultAddresses = await _context.Addresses
-                        .Where(a => a.IsDefault.GetValueOrDefault())
+                        .Where(a => a.UserId == model.UserId && a.IsDefault == true)
                         .ToListAsync();
 
                     foreach (var addr in defaultAddresses)
@@ -52,11 +58,12 @@ namespace Backend_Api.Controllers
 
                 var address = new Address
                 {
+                    UserId = model.UserId,
                     CityId = model.CityId,
                     AddressLine1 = model.AddressLine1,
                     AddressLine2 = model.AddressLine2,
                     PostalCode = model.PostalCode,
-                    IsDefault = model.IsDefault.GetValueOrDefault(), // FIXED
+                    IsDefault = model.IsDefault.GetValueOrDefault(),
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -66,12 +73,9 @@ namespace Backend_Api.Controllers
                 return Ok(new
                 {
                     message = "Address created successfully.",
-                    addressId = address.AddressId
+                    addressId = address.AddressId,
+                    userId = address.UserId
                 });
-            }
-            catch (DbUpdateException)
-            {
-                return StatusCode(500, new { message = "Database error occurred while creating the address." });
             }
             catch (Exception ex)
             {
@@ -91,16 +95,17 @@ namespace Backend_Api.Controllers
                     .Select(a => new AddressDTO
                     {
                         AddressId = a.AddressId,
+                        UserId = a.UserId,
                         CityId = a.CityId,
                         CityName = a.City.CityName,
                         AddressLine1 = a.AddressLine1,
                         AddressLine2 = a.AddressLine2,
                         PostalCode = a.PostalCode,
-                        IsDefault = a.IsDefault.GetValueOrDefault() // FIXED
+                        IsDefault = a.IsDefault.GetValueOrDefault()
                     })
                     .ToListAsync();
 
-                if (addresses.Count == 0)
+                if (!addresses.Any())
                     return NotFound(new { message = "No addresses found." });
 
                 return Ok(addresses);
@@ -127,12 +132,13 @@ namespace Backend_Api.Controllers
                     .Select(a => new AddressDTO
                     {
                         AddressId = a.AddressId,
+                        UserId = a.UserId,
                         CityId = a.CityId,
                         CityName = a.City.CityName,
                         AddressLine1 = a.AddressLine1,
                         AddressLine2 = a.AddressLine2,
                         PostalCode = a.PostalCode,
-                        IsDefault = a.IsDefault.GetValueOrDefault() // FIXED
+                        IsDefault = a.IsDefault.GetValueOrDefault()
                     })
                     .FirstOrDefaultAsync();
 
@@ -144,6 +150,43 @@ namespace Backend_Api.Controllers
             catch (Exception ex)
             {
                 return StatusCode(500, new { message = "Failed to fetch address.", details = ex.Message });
+            }
+        }
+
+        // ================= GET BY USER =================
+        // GET: api/Address/user/5
+        [HttpGet("user/{userId}")]
+        public async Task<IActionResult> GetAddressesByUser(int userId)
+        {
+            if (userId <= 0)
+                return BadRequest(new { message = "Invalid User ID." });
+
+            try
+            {
+                var addresses = await _context.Addresses
+                    .Include(a => a.City)
+                    .Where(a => a.UserId == userId)
+                    .Select(a => new AddressDTO
+                    {
+                        AddressId = a.AddressId,
+                        UserId = a.UserId,
+                        CityId = a.CityId,
+                        CityName = a.City.CityName,
+                        AddressLine1 = a.AddressLine1,
+                        AddressLine2 = a.AddressLine2,
+                        PostalCode = a.PostalCode,
+                        IsDefault = a.IsDefault.GetValueOrDefault()
+                    })
+                    .ToListAsync();
+
+                if (!addresses.Any())
+                    return NotFound(new { message = "No addresses found for this user." });
+
+                return Ok(addresses);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Failed to fetch user addresses.", details = ex.Message });
             }
         }
 
@@ -170,15 +213,11 @@ namespace Backend_Api.Controllers
                 if (address == null)
                     return NotFound(new { message = "Address not found." });
 
-                var cityExists = await _context.Cities.AnyAsync(c => c.CityId == model.CityId);
-                if (!cityExists)
-                    return BadRequest(new { message = "Selected city does not exist." });
-
-                // If this is default address, unset other defaults
+                // Default per user
                 if (model.IsDefault.GetValueOrDefault())
                 {
                     var defaultAddresses = await _context.Addresses
-                        .Where(a => a.IsDefault.GetValueOrDefault() && a.AddressId != id)
+                        .Where(a => a.UserId == address.UserId && a.IsDefault == true && a.AddressId != id)
                         .ToListAsync();
 
                     foreach (var addr in defaultAddresses)
@@ -189,16 +228,17 @@ namespace Backend_Api.Controllers
                 address.AddressLine1 = model.AddressLine1;
                 address.AddressLine2 = model.AddressLine2;
                 address.PostalCode = model.PostalCode;
-                address.IsDefault = model.IsDefault.GetValueOrDefault(); // FIXED
+                address.IsDefault = model.IsDefault.GetValueOrDefault();
                 address.UpdatedAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
 
-                return Ok(new { message = "Address updated successfully." });
-            }
-            catch (DbUpdateException)
-            {
-                return StatusCode(500, new { message = "Database error occurred while updating the address." });
+                return Ok(new
+                {
+                    message = "Address updated successfully.",
+                    addressId = address.AddressId,
+                    userId = address.UserId
+                });
             }
             catch (Exception ex)
             {
@@ -223,11 +263,12 @@ namespace Backend_Api.Controllers
                 _context.Addresses.Remove(address);
                 await _context.SaveChangesAsync();
 
-                return Ok(new { message = "Address deleted successfully." });
-            }
-            catch (DbUpdateException)
-            {
-                return StatusCode(500, new { message = "Database error occurred while deleting the address." });
+                return Ok(new
+                {
+                    message = "Address deleted successfully.",
+                    addressId = address.AddressId,
+                    userId = address.UserId
+                });
             }
             catch (Exception ex)
             {

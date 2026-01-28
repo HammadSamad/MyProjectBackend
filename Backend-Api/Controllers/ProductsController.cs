@@ -161,6 +161,68 @@ namespace Backend_Api.Controllers
         }
 
         // =========================================================
+        // GET PRODUCTS FOR DISPLAY (Min Price Variant)
+        // Only: Image, Name, Min Price, Average Rating
+        // =========================================================
+        [HttpGet("display")]
+        public async Task<IActionResult> GetProductsForDisplay()
+        {
+            try
+            {
+                var products = await _context.Products
+                    .Where(p => p.IsActive == true)
+                    .Include(p => p.ProductImages)
+                    .Include(p => p.ProductVariants)
+                    .Include(p => p.ProductReviews)
+                    .ToListAsync();
+
+                var result = products.Select(p =>
+                {
+                    // Find cheapest variant
+                    var cheapestVariant = p.ProductVariants
+                        .OrderBy(v => CalculateFinalPrice(v))
+                        .FirstOrDefault();
+
+                    return new ProductDisplayDTO
+                    {
+                        ProductId = p.ProductId,
+                        ProductName = p.ProductName,
+                        ProductImage = p.ProductImages
+                            .FirstOrDefault(i => i.IsCover == true)?.ImageUrl
+                            ?? p.ProductImages.FirstOrDefault()?.ImageUrl,
+
+                        ProductPrice = cheapestVariant != null
+                            ? CalculateFinalPrice(cheapestVariant)
+                            : 0,
+
+                        AverageRating = p.ProductReviews.Any()
+                            ? Math.Round(p.ProductReviews.Average(r => r.Rating ?? 0), 1)
+                            : 0
+                    };
+                }).ToList();
+
+                if (!result.Any())
+                    return NotFound(new { message = "No products available for display." });
+
+                return Ok(new
+                {
+                    message = "Display products fetched successfully",
+                    total = result.Count,
+                    data = result
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    message = "Error while fetching display products",
+                    details = ex.Message
+                });
+            }
+        }
+
+
+        // =========================================================
         // GET PRODUCT BY ID
         // =========================================================
         [HttpGet("{id}")]
