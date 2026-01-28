@@ -1,7 +1,12 @@
 ﻿using Backend_Api.Data;
 using Backend_Api.Models;
+using Backend_Api.Models.Model_Create;
+using Backend_Api.Models.Model_DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Backend_Api.Controllers
 {
@@ -18,36 +23,57 @@ namespace Backend_Api.Controllers
 
         // =====================================================
         // POST: api/ProductView
-        // When a user views a product
+        // Log a product view
         // =====================================================
         [HttpPost]
-        public async Task<IActionResult> AddProductView(int productId, int? userId = null)
+        public async Task<IActionResult> AddProductView([FromBody] CreateProductView model)
         {
-            if (productId <= 0)
+            if (model == null || model.ProductId <= 0)
                 return BadRequest(new { error = "Invalid product ID" });
 
             try
             {
-                // Check if product exists
-                var productExists = await _context.Products.AnyAsync(p => p.ProductId == productId);
-                if (!productExists)
+                var product = await _context.Products
+                    .Include(p => p.ProductImages)
+                    .FirstOrDefaultAsync(p => p.ProductId == model.ProductId);
+
+                if (product == null)
                     return NotFound(new { error = "Product not found" });
+
+                var user = model.UserId.HasValue
+                    ? await _context.Users.FirstOrDefaultAsync(u => u.UserId == model.UserId.Value)
+                    : null;
 
                 var view = new ProductView
                 {
-                    ProductId = productId,
-                    UserId = userId,
+                    ProductId = model.ProductId,
+                    UserId = model.UserId,
                     ViewedAt = DateTime.UtcNow
                 };
 
                 _context.ProductViews.Add(view);
                 await _context.SaveChangesAsync();
 
-                return Ok(new { message = "Product view logged successfully" });
-            }
-            catch (DbUpdateException dbEx)
-            {
-                return StatusCode(500, new { error = "Database error occurred while logging product view", details = dbEx.Message });
+                // Safe mapping to DTO
+                string? productImage = null;
+                if (product.ProductImages != null && product.ProductImages.Any())
+                {
+                    var coverImage = product.ProductImages.FirstOrDefault(i => i.IsCover.HasValue && i.IsCover.Value);
+                    productImage = coverImage?.ImageUrl ?? product.ProductImages.FirstOrDefault()?.ImageUrl;
+                }
+
+                var dto = new ProductViewDTO
+                {
+                    ViewId = view.ViewId,
+                    ProductId = view.ProductId,
+                    ProductName = product.ProductName ?? "Unknown",
+                    ProductImage = productImage,
+                    UserId = view.UserId,
+                    Username = user?.Username ?? "Guest",
+                    ViewedAt = view.ViewedAt
+                };
+
+                return Ok(new { message = "Product view logged successfully", data = dto });
             }
             catch (Exception ex)
             {
@@ -57,7 +83,7 @@ namespace Backend_Api.Controllers
 
         // =====================================================
         // GET: api/ProductView
-        // Admin / Analytics purpose
+        // Fetch all product views
         // =====================================================
         [HttpGet]
         public async Task<IActionResult> GetAllViews()
@@ -66,20 +92,34 @@ namespace Backend_Api.Controllers
             {
                 var views = await _context.ProductViews
                     .Include(v => v.Product)
+                        .ThenInclude(p => p.ProductImages)
                     .Include(v => v.User)
-                    .Select(v => new
-                    {
-                        v.ViewId,
-                        v.ProductId,
-                        ProductName = v.Product.ProductName,
-                        v.UserId,
-                        Username = v.User != null ? v.User.Username : "Guest",
-                        v.ViewedAt
-                    })
                     .OrderByDescending(v => v.ViewedAt)
                     .ToListAsync();
 
-                return Ok(views);
+                var dtoList = views.Select(v =>
+                {
+                    string? productImage = null;
+
+                    if (v.Product?.ProductImages != null && v.Product.ProductImages.Any())
+                    {
+                        var coverImage = v.Product.ProductImages.FirstOrDefault(i => i.IsCover.HasValue && i.IsCover.Value);
+                        productImage = coverImage?.ImageUrl ?? v.Product.ProductImages.FirstOrDefault()?.ImageUrl;
+                    }
+
+                    return new ProductViewDTO
+                    {
+                        ViewId = v.ViewId,
+                        ProductId = v.ProductId,
+                        ProductName = v.Product?.ProductName ?? "Unknown",
+                        ProductImage = productImage,
+                        UserId = v.UserId,
+                        Username = v.User?.Username ?? "Guest",
+                        ViewedAt = v.ViewedAt
+                    };
+                }).ToList();
+
+                return Ok(dtoList);
             }
             catch (Exception ex)
             {
@@ -89,7 +129,7 @@ namespace Backend_Api.Controllers
 
         // =====================================================
         // DELETE: api/ProductView/cleanup/7
-        // Backup cleanup if trigger fails or DB idle
+        // Delete old product views older than X days
         // =====================================================
         [HttpDelete("cleanup/{days}")]
         public async Task<IActionResult> CleanupOldViews(int days)
@@ -117,13 +157,9 @@ namespace Backend_Api.Controllers
                     deletedCount = oldViews.Count
                 });
             }
-            catch (DbUpdateException dbEx)
-            {
-                return StatusCode(500, new { error = "Database error occurred while deleting old product views", details = dbEx.Message });
-            }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+                return StatusCode(500, new { error = "Failed to delete old product views", details = ex.Message });
             }
         }
     }
