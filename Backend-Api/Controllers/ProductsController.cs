@@ -190,6 +190,14 @@ namespace Backend_Api.Controllers
 
                     bool isDiscounted = discountPrice < originalPrice;
 
+                    // Calculate effective discount percentage
+                    decimal discountPercentage = 0;
+                    if (cheapestVariant != null && originalPrice > 0)
+                    {
+                        discountPercentage = ((originalPrice - discountPrice) / originalPrice) * 100;
+                        discountPercentage = Math.Round(discountPercentage, 2);
+                    }
+
                     return new ProductDisplayDTO
                     {
                         ProductId = p.ProductId,
@@ -201,6 +209,7 @@ namespace Backend_Api.Controllers
 
                         OriginalPrice = originalPrice,
                         DiscountPrice = discountPrice,
+                        DiscountPercentage = discountPercentage,
                         IsDiscounted = isDiscounted,
 
                         AverageRating = p.ProductReviews.Any()
@@ -228,6 +237,7 @@ namespace Backend_Api.Controllers
                 });
             }
         }
+
 
 
 
