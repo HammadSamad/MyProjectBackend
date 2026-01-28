@@ -34,7 +34,7 @@ namespace Backend_Api.Controllers
                 // Check for duplicate city name within the same country
                 bool duplicateCity = await _context.Cities
                     .AnyAsync(c => c.CountryId == model.CountryId &&
-                                   c.CityName.ToLower() == model.CityName.ToLower());
+                                   c.CityName!.ToLower() == model.CityName.ToLower());
                 if (duplicateCity)
                     return Conflict(new { message = "City name already exists in this country." });
 
@@ -147,7 +147,7 @@ namespace Backend_Api.Controllers
                 bool duplicateCity = await _context.Cities
                     .AnyAsync(c => c.CityId != id &&
                                    c.CountryId == model.CountryId &&
-                                   c.CityName.ToLower() == model.CityName.ToLower());
+                                   c.CityName!.ToLower() == model.CityName.ToLower());
                 if (duplicateCity)
                     return Conflict(new { message = "City name already exists in this country." });
 

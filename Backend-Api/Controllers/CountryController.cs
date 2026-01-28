@@ -28,7 +28,7 @@ namespace Backend_Api.Controllers
 
                 // Check for duplicate country name (case-insensitive)
                 var exists = await _context.Countries
-                    .AnyAsync(c => c.CountryName.ToLower() == model.CountryName.ToLower());
+                    .AnyAsync(c => c.CountryName!.ToLower() == model.CountryName.ToLower());
                 if (exists)
                     return Conflict(new { error = "Country name already exists." });
 
@@ -112,7 +112,7 @@ namespace Backend_Api.Controllers
 
                 // Check for duplicate country name (case-insensitive), excluding current record
                 var exists = await _context.Countries
-                    .AnyAsync(c => c.CountryId != id && c.CountryName.ToLower() == model.CountryName.ToLower());
+                    .AnyAsync(c => c.CountryId != id && c.CountryName!.ToLower() == model.CountryName.ToLower());
                 if (exists)
                     return Conflict(new { error = "Country name already exists." });
 

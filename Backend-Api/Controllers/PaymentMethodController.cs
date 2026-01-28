@@ -32,7 +32,7 @@ namespace Backend_Api.Controllers
 
                 // Prevent duplicate
                 bool exists = await _context.PaymentMethods
-                    .AnyAsync(pm => pm.MethodName.ToLower() == model.MethodName.ToLower());
+                    .AnyAsync(pm => pm.MethodName!.ToLower() == model.MethodName.ToLower());
                 if (exists)
                     return BadRequest(new { error = "Payment method already exists." });
 
@@ -124,7 +124,7 @@ namespace Backend_Api.Controllers
                 // Prevent duplicate name on update
                 bool duplicateExists = await _context.PaymentMethods
                     .AnyAsync(pm => pm.PaymentMethodId != id &&
-                                    pm.MethodName.ToLower() == model.MethodName.ToLower());
+                                    pm.MethodName!.ToLower() == model.MethodName.ToLower());
                 if (duplicateExists)
                     return BadRequest(new { error = "Another payment method with the same name already exists." });
 
