@@ -178,22 +178,30 @@ namespace Backend_Api.Controllers
 
                 var result = products.Select(p =>
                 {
-                    // Find cheapest variant
+                    // Get cheapest variant by final discounted price
                     var cheapestVariant = p.ProductVariants
                         .OrderBy(v => CalculateFinalPrice(v))
                         .FirstOrDefault();
+
+                    decimal originalPrice = cheapestVariant?.Price ?? 0;
+                    decimal discountPrice = cheapestVariant != null
+                        ? CalculateFinalPrice(cheapestVariant)
+                        : 0;
+
+                    bool isDiscounted = discountPrice < originalPrice;
 
                     return new ProductDisplayDTO
                     {
                         ProductId = p.ProductId,
                         ProductName = p.ProductName,
+
                         ProductImage = p.ProductImages
                             .FirstOrDefault(i => i.IsCover == true)?.ImageUrl
                             ?? p.ProductImages.FirstOrDefault()?.ImageUrl,
 
-                        ProductPrice = cheapestVariant != null
-                            ? CalculateFinalPrice(cheapestVariant)
-                            : 0,
+                        OriginalPrice = originalPrice,
+                        DiscountPrice = discountPrice,
+                        IsDiscounted = isDiscounted,
 
                         AverageRating = p.ProductReviews.Any()
                             ? Math.Round(p.ProductReviews.Average(r => r.Rating ?? 0), 1)
@@ -220,6 +228,7 @@ namespace Backend_Api.Controllers
                 });
             }
         }
+
 
 
         // =========================================================
