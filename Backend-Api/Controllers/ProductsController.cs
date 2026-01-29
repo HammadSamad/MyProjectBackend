@@ -165,78 +165,81 @@ namespace Backend_Api.Controllers
         // Only: Image, Name, Min Price, Average Rating
         // =========================================================
         [HttpGet("display")]
-        public async Task<IActionResult> GetProductsForDisplay()
+public async Task<IActionResult> GetProductsForDisplay()
+{
+    try
+    {
+        var products = await _context.Products
+            .Where(p => p.IsActive == true)
+            .Include(p => p.ProductImages)
+            .Include(p => p.ProductVariants)
+            .Include(p => p.ProductReviews)
+            .ToListAsync();
+
+        var result = products.Select(p =>
         {
-            try
+            // Get cheapest variant by final discounted price
+            var cheapestVariant = p.ProductVariants
+                .OrderBy(v => CalculateFinalPrice(v))
+                .FirstOrDefault();
+
+            decimal originalPrice = cheapestVariant?.Price ?? 0;
+            decimal discountPrice = cheapestVariant != null
+                ? CalculateFinalPrice(cheapestVariant)
+                : 0;
+
+            bool isDiscounted = discountPrice < originalPrice;
+
+            // Calculate effective discount percentage
+            decimal discountPercentage = 0;
+            if (cheapestVariant != null && originalPrice > 0)
             {
-                var products = await _context.Products
-                    .Where(p => p.IsActive == true)
-                    .Include(p => p.ProductImages)
-                    .Include(p => p.ProductVariants)
-                    .Include(p => p.ProductReviews)
-                    .ToListAsync();
-
-                var result = products.Select(p =>
-                {
-                    // Get cheapest variant by final discounted price
-                    var cheapestVariant = p.ProductVariants
-                        .OrderBy(v => CalculateFinalPrice(v))
-                        .FirstOrDefault();
-
-                    decimal originalPrice = cheapestVariant?.Price ?? 0;
-                    decimal discountPrice = cheapestVariant != null
-                        ? CalculateFinalPrice(cheapestVariant)
-                        : 0;
-
-                    bool isDiscounted = discountPrice < originalPrice;
-
-                    // Calculate effective discount percentage
-                    decimal discountPercentage = 0;
-                    if (cheapestVariant != null && originalPrice > 0)
-                    {
-                        discountPercentage = ((originalPrice - discountPrice) / originalPrice) * 100;
-                        discountPercentage = Math.Round(discountPercentage, 2);
-                    }
-
-                    return new ProductDisplayDTO
-                    {
-                        ProductId = p.ProductId,
-                        ProductName = p.ProductName,
-
-                        ProductImage = p.ProductImages
-                            .FirstOrDefault(i => i.IsCover == true)?.ImageUrl
-                            ?? p.ProductImages.FirstOrDefault()?.ImageUrl,
-
-                        OriginalPrice = originalPrice,
-                        DiscountPrice = discountPrice,
-                        DiscountPercentage = discountPercentage,
-                        IsDiscounted = isDiscounted,
-
-                        AverageRating = p.ProductReviews.Any()
-                            ? Math.Round(p.ProductReviews.Average(r => r.Rating ?? 0), 1)
-                            : 0
-                    };
-                }).ToList();
-
-                if (!result.Any())
-                    return NotFound(new { message = "No products available for display." });
-
-                return Ok(new
-                {
-                    message = "Display products fetched successfully",
-                    total = result.Count,
-                    data = result
-                });
+                discountPercentage = ((originalPrice - discountPrice) / originalPrice) * 100;
+                discountPercentage = Math.Round(discountPercentage, 2);
             }
-            catch (Exception ex)
+
+            return new ProductDisplayDTO
             {
-                return StatusCode(500, new
-                {
-                    message = "Error while fetching display products",
-                    details = ex.Message
-                });
-            }
-        }
+                ProductId = p.ProductId,
+
+                // ✅ Send VariantId of the cheapest variant
+                VariantId = cheapestVariant?.VariantId,
+
+                ProductName = p.ProductName,
+                ProductImage = p.ProductImages
+                    .FirstOrDefault(i => i.IsCover == true)?.ImageUrl
+                    ?? p.ProductImages.FirstOrDefault()?.ImageUrl,
+
+                OriginalPrice = originalPrice,
+                DiscountPrice = discountPrice,
+                DiscountPercentage = discountPercentage,
+                IsDiscounted = isDiscounted,
+
+                AverageRating = p.ProductReviews.Any()
+                    ? Math.Round(p.ProductReviews.Average(r => r.Rating ?? 0), 1)
+                    : 0
+            };
+        }).ToList();
+
+        if (!result.Any())
+            return NotFound(new { message = "No products available for display." });
+
+        return Ok(new
+        {
+            message = "Display products fetched successfully",
+            total = result.Count,
+            data = result
+        });
+    }
+    catch (Exception ex)
+    {
+        return StatusCode(500, new
+        {
+            message = "Error while fetching display products",
+            details = ex.Message
+        });
+    }
+}
 
 
 
