@@ -13,9 +13,13 @@ public partial class CartItem
 
     public int? Quantity { get; set; }
 
+    public int VariantSpecificationOptionsId { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public virtual Cart Cart { get; set; } = null!;
 
     public virtual ProductVariant Variant { get; set; } = null!;
+
+    public virtual SpecificationOption VariantSpecificationOptions { get; set; } = null!;
 }

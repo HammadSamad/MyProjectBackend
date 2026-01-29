@@ -70,7 +70,7 @@ public partial class LaptopHarbourDbContext : DbContext
 
     public virtual DbSet<Return> Returns { get; set; }
 
-    public DbSet<ReviewImage> ReviewImages { get; set; } = null!;
+    public virtual DbSet<ReviewImage> ReviewImages { get; set; }
 
     public virtual DbSet<Role> Roles { get; set; }
 
@@ -182,7 +182,7 @@ public partial class LaptopHarbourDbContext : DbContext
 
         modelBuilder.Entity<CartItem>(entity =>
         {
-            entity.HasKey(e => e.CartItemId).HasName("PK__cart_ite__5D9A6C6E621F248A");
+            entity.HasKey(e => e.CartItemId).HasName("PK__tmp_ms_x__5D9A6C6EA4C28666");
 
             entity.ToTable("cart_items");
 
@@ -193,16 +193,22 @@ public partial class LaptopHarbourDbContext : DbContext
                 .HasColumnName("created_at");
             entity.Property(e => e.Quantity).HasColumnName("quantity");
             entity.Property(e => e.VariantId).HasColumnName("variant_id");
+            entity.Property(e => e.VariantSpecificationOptionsId).HasColumnName("variant_specification_options_id");
 
             entity.HasOne(d => d.Cart).WithMany(p => p.CartItems)
                 .HasForeignKey(d => d.CartId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__cart_item__cart___1BC821DD");
+                .HasConstraintName("FK__cart_item__cart___3B95D2F1");
 
             entity.HasOne(d => d.Variant).WithMany(p => p.CartItems)
                 .HasForeignKey(d => d.VariantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__cart_item__varia__184C96B4");
+                .HasConstraintName("FK__cart_item__varia__3AA1AEB8");
+
+            entity.HasOne(d => d.VariantSpecificationOptions).WithMany(p => p.CartItems)
+                .HasForeignKey(d => d.VariantSpecificationOptionsId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK__cart_item__varia__3C89F72A");
         });
 
         modelBuilder.Entity<Category>(entity =>
@@ -862,18 +868,24 @@ public partial class LaptopHarbourDbContext : DbContext
                 .HasConstraintName("FK__returns__user_id__00AA174D");
         });
 
-    {
-        base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<ReviewImage>(entity =>
+        {
+            entity.HasKey(e => e.ReviewImageId).HasName("PK__review_i__9523BBD5E2B01877");
 
-        modelBuilder.Entity<ReviewImage>()
-            .HasOne(r => r.Review)
-            .WithMany(r => r.Images)
-            .HasForeignKey(r => r.ReviewId)
-            .HasConstraintName("FK_review_images_product_reviews")
-            .OnDelete(DeleteBehavior.Cascade);
-    }
+            entity.ToTable("review_images");
 
-    modelBuilder.Entity<Role>(entity =>
+            entity.Property(e => e.ReviewImageId).HasColumnName("reviewImage_id");
+            entity.Property(e => e.ImageUrl)
+                .HasMaxLength(500)
+                .HasColumnName("imageUrl");
+            entity.Property(e => e.ReviewId).HasColumnName("review_id");
+
+            entity.HasOne(d => d.Review).WithMany(p => p.ReviewImages)
+                .HasForeignKey(d => d.ReviewId)
+                .HasConstraintName("FK_review_images_product_reviews");
+        });
+
+        modelBuilder.Entity<Role>(entity =>
         {
             entity.HasKey(e => e.RoleId).HasName("PK__roles__760965CCEB9FC4C0");
 

@@ -13,6 +13,8 @@ public partial class SpecificationOption
 
     public DateTime? CreatedAt { get; set; }
 
+    public virtual ICollection<CartItem> CartItems { get; set; } = new List<CartItem>();
+
     public virtual ICollection<ProductSpecificationValue> ProductSpecificationValues { get; set; } = new List<ProductSpecificationValue>();
 
     public virtual SpecificationDefinition Specification { get; set; } = null!;

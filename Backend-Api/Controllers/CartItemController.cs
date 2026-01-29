@@ -1,5 +1,6 @@
 ﻿using Backend_Api.Data;
 using Backend_Api.Models;
+using Backend_Api.Models.Model_Create;
 using Backend_Api.Models.Model_DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -19,28 +20,25 @@ namespace Backend_Api.Controllers
 
         // ================= CREATE / ADD CART ITEM =================
         [HttpPost]
-        public async Task<IActionResult> AddCartItem([FromBody] AddCartItemDTO model)
+        public async Task<IActionResult> AddCartItem([FromBody] CreateCartItem model)
         {
             try
             {
                 if (model == null || model.Quantity <= 0)
                     return BadRequest(new { message = "Invalid cart item data or quantity must be > 0." });
 
-                // Check if cart exists for user; if not, create one
                 var cart = await _context.Carts
-                    .FirstOrDefaultAsync(c => c.CartId == model.CartId && c.UserId == model.UserId);
+                    .FirstOrDefaultAsync(c => c.CartId == model.CartId);
 
                 if (cart == null)
-                {
-                    cart = new Cart { UserId = model.UserId, CreatedAt = DateTime.UtcNow };
-                    _context.Carts.Add(cart);
-                    await _context.SaveChangesAsync();
-                    model.CartId = cart.CartId;
-                }
+                    return NotFound(new { message = "Cart not found." });
 
-                // Check if item already exists in cart
+                // 🔥 Include color/spec option in uniqueness check
                 var existingItem = await _context.CartItems
-                    .FirstOrDefaultAsync(ci => ci.CartId == model.CartId && ci.VariantId == model.VariantId);
+                    .FirstOrDefaultAsync(ci =>
+                        ci.CartId == model.CartId &&
+                        ci.VariantId == model.VariantId &&
+                        ci.VariantSpecificationOptionsId == model.VariantSpecificationOptionsId);
 
                 if (existingItem != null)
                 {
@@ -51,14 +49,15 @@ namespace Backend_Api.Controllers
                     return Ok(new { message = "Cart item quantity increased successfully.", data = updatedItem });
                 }
 
-                // Add new cart item
                 var cartItem = new CartItem
                 {
                     CartId = model.CartId,
                     VariantId = model.VariantId,
+                    VariantSpecificationOptionsId = model.VariantSpecificationOptionsId,
                     Quantity = model.Quantity,
                     CreatedAt = DateTime.UtcNow
                 };
+
                 _context.CartItems.Add(cartItem);
                 await _context.SaveChangesAsync();
 
@@ -71,7 +70,7 @@ namespace Backend_Api.Controllers
             }
         }
 
-        // ================= GET ALL CART ITEMS (All carts) =================
+        // ================= GET ALL CART ITEMS =================
         [HttpGet]
         public async Task<IActionResult> GetAllCartItems()
         {
@@ -82,11 +81,14 @@ namespace Backend_Api.Controllers
                     .Include(ci => ci.Variant)
                         .ThenInclude(v => v.Product)
                             .ThenInclude(p => p.ProductImages)
+                    .Include(ci => ci.VariantSpecificationOptions)
+                        .ThenInclude(o => o.Specification)
                     .Select(ci => new CartItemDTO
                     {
                         CartItemId = ci.CartItemId,
                         CartId = ci.CartId,
                         VariantId = ci.VariantId,
+                        VariantSpecificationOptionsId = ci.VariantSpecificationOptionsId,
                         Quantity = ci.Quantity,
                         UserId = ci.Cart.UserId,
                         VariantSku = ci.Variant.Sku,
@@ -97,6 +99,12 @@ namespace Backend_Api.Controllers
                                     .OrderByDescending(pi => pi.IsCover ?? false)
                                     .Select(pi => pi.ImageUrl)
                                     .FirstOrDefault(),
+
+                        // 🎨 Send selected color
+                        SelectedColor = ci.VariantSpecificationOptions.Specification.SpecificationName == "Color"
+                                        ? ci.VariantSpecificationOptions.OptionValue
+                                        : null,
+
                         CreatedAt = ci.CreatedAt
                     })
                     .ToListAsync();
@@ -127,7 +135,7 @@ namespace Backend_Api.Controllers
             }
         }
 
-        // ================= GET ITEMS BY CART ID (WITH SUBTOTAL) =================
+        // ================= GET ITEMS BY CART ID =================
         [HttpGet("cart/{cartId}")]
         public async Task<IActionResult> GetItemsByCartId(int cartId)
         {
@@ -138,12 +146,15 @@ namespace Backend_Api.Controllers
                     .Include(ci => ci.Variant)
                         .ThenInclude(v => v.Product)
                             .ThenInclude(p => p.ProductImages)
+                    .Include(ci => ci.VariantSpecificationOptions)
+                        .ThenInclude(o => o.Specification)
                     .Where(ci => ci.CartId == cartId)
                     .Select(ci => new CartItemDTO
                     {
                         CartItemId = ci.CartItemId,
                         CartId = ci.CartId,
                         VariantId = ci.VariantId,
+                        VariantSpecificationOptionsId = ci.VariantSpecificationOptionsId,
                         Quantity = ci.Quantity,
                         UserId = ci.Cart.UserId,
                         VariantSku = ci.Variant.Sku,
@@ -154,6 +165,11 @@ namespace Backend_Api.Controllers
                                     .OrderByDescending(pi => pi.IsCover ?? false)
                                     .Select(pi => pi.ImageUrl)
                                     .FirstOrDefault(),
+
+                        SelectedColor = ci.VariantSpecificationOptions.Specification.SpecificationName == "Color"
+                                        ? ci.VariantSpecificationOptions.OptionValue
+                                        : null,
+
                         CreatedAt = ci.CreatedAt
                     })
                     .ToListAsync();
@@ -169,7 +185,7 @@ namespace Backend_Api.Controllers
             }
         }
 
-        // ================= GET CART SUMMARY BY USER ID (AUTO CREATE IF NONE) =================
+        // ================= GET CART BY USER ID =================
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetCartByUserId(int userId)
         {
@@ -180,7 +196,6 @@ namespace Backend_Api.Controllers
 
                 if (cart == null)
                 {
-                    // Automatically create new cart for user
                     cart = new Cart { UserId = userId, CreatedAt = DateTime.UtcNow };
                     _context.Carts.Add(cart);
                     await _context.SaveChangesAsync();
@@ -196,7 +211,7 @@ namespace Backend_Api.Controllers
 
         // ================= UPDATE CART ITEM =================
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateCartItem(int id, [FromBody] AddCartItemDTO model)
+        public async Task<IActionResult> UpdateCartItem(int id, [FromBody] CreateCartItem model)
         {
             try
             {
@@ -208,6 +223,8 @@ namespace Backend_Api.Controllers
                     return NotFound(new { message = "Cart item not found." });
 
                 item.Quantity = model.Quantity;
+                item.VariantSpecificationOptionsId = model.VariantSpecificationOptionsId;
+
                 await _context.SaveChangesAsync();
 
                 var updatedItem = await GetCartItemDTO(id);
@@ -246,7 +263,10 @@ namespace Backend_Api.Controllers
         {
             try
             {
-                var items = await _context.CartItems.Where(ci => ci.CartId == cartId).ToListAsync();
+                var items = await _context.CartItems
+                    .Where(ci => ci.CartId == cartId)
+                    .ToListAsync();
+
                 if (!items.Any())
                     return NotFound(new { message = "No items found in this cart." });
 
@@ -269,12 +289,15 @@ namespace Backend_Api.Controllers
                 .Include(ci => ci.Variant)
                     .ThenInclude(v => v.Product)
                         .ThenInclude(p => p.ProductImages)
+                .Include(ci => ci.VariantSpecificationOptions)
+                    .ThenInclude(o => o.Specification)
                 .Where(ci => ci.CartItemId == cartItemId)
                 .Select(ci => new CartItemDTO
                 {
                     CartItemId = ci.CartItemId,
                     CartId = ci.CartId,
                     VariantId = ci.VariantId,
+                    VariantSpecificationOptionsId = ci.VariantSpecificationOptionsId,
                     Quantity = ci.Quantity,
                     UserId = ci.Cart.UserId,
                     VariantSku = ci.Variant.Sku,
@@ -285,6 +308,11 @@ namespace Backend_Api.Controllers
                                 .OrderByDescending(pi => pi.IsCover ?? false)
                                 .Select(pi => pi.ImageUrl)
                                 .FirstOrDefault(),
+
+                    SelectedColor = ci.VariantSpecificationOptions.Specification.SpecificationName == "Color"
+                                    ? ci.VariantSpecificationOptions.OptionValue
+                                    : null,
+
                     CreatedAt = ci.CreatedAt
                 })
                 .FirstOrDefaultAsync();
@@ -296,7 +324,6 @@ namespace Backend_Api.Controllers
             decimal price = v.Price ?? 0;
             var now = DateTime.UtcNow;
 
-            // Check discount validity
             if (v.DiscountStart.HasValue && now < v.DiscountStart) { }
             else if (v.DiscountEnd.HasValue && now > v.DiscountEnd) { }
             else

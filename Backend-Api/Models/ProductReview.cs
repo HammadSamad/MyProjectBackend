@@ -21,7 +21,7 @@ public partial class ProductReview
 
     public virtual Product Product { get; set; } = null!;
 
-    public virtual User User { get; set; } = null!;
+    public virtual ICollection<ReviewImage> ReviewImages { get; set; } = new List<ReviewImage>();
 
-    public ICollection<ReviewImage> Images { get; set; } = new List<ReviewImage>();
+    public virtual User User { get; set; } = null!;
 }
