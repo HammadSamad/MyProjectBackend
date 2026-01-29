@@ -20,7 +20,8 @@ namespace Backend_Api.Controllers
 
         // =====================================================
         // POST: api/ProductView
-        // Log a product view (minimal)
+        // Insert OR Update product view (NO DUPLICATES)
+        // If same user views same product again → only ViewedAt is updated
         // =====================================================
         [HttpPost]
         public async Task<IActionResult> AddProductView([FromBody] CreateProductView model)
@@ -30,35 +31,69 @@ namespace Backend_Api.Controllers
 
             try
             {
-                var view = new ProductView
+                // 🔍 Check if already exists for same user + product
+                var existingView = await _context.ProductViews
+                    .FirstOrDefaultAsync(v =>
+                        v.ProductId == model.ProductId &&
+                        v.UserId == model.UserId);
+
+                if (existingView != null)
                 {
-                    ProductId = model.ProductId,
-                    UserId = model.UserId,
-                    ViewedAt = DateTime.UtcNow
-                };
+                    // 🔁 Update ViewedAt only
+                    existingView.ViewedAt = DateTime.UtcNow;
+                    await _context.SaveChangesAsync();
 
-                _context.ProductViews.Add(view);
-                await _context.SaveChangesAsync();
-
-                var dto = new
+                    return Ok(new
+                    {
+                        message = "Product view updated successfully",
+                        data = new
+                        {
+                            existingView.ViewId,
+                            existingView.ProductId,
+                            existingView.UserId,
+                            existingView.ViewedAt
+                        }
+                    });
+                }
+                else
                 {
-                    view.ViewId,
-                    view.ProductId,
-                    view.UserId,
-                    view.ViewedAt
-                };
+                    // ➕ Insert new row
+                    var view = new ProductView
+                    {
+                        ProductId = model.ProductId,
+                        UserId = model.UserId,
+                        ViewedAt = DateTime.UtcNow
+                    };
 
-                return Ok(new { message = "Product view logged successfully", data = dto });
+                    _context.ProductViews.Add(view);
+                    await _context.SaveChangesAsync();
+
+                    return Ok(new
+                    {
+                        message = "Product view logged successfully",
+                        data = new
+                        {
+                            view.ViewId,
+                            view.ProductId,
+                            view.UserId,
+                            view.ViewedAt
+                        }
+                    });
+                }
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "An unexpected error occurred", details = ex.Message });
+                return StatusCode(500, new
+                {
+                    error = "An unexpected error occurred",
+                    details = ex.Message
+                });
             }
         }
 
         // =====================================================
         // GET: api/ProductView
-        // Fetch all product views with product data
+        // Fetch all product views with discount price logic
         // =====================================================
         [HttpGet]
         public async Task<IActionResult> GetAllViews()
@@ -68,6 +103,8 @@ namespace Backend_Api.Controllers
                 var views = await _context.ProductViews
                     .Include(v => v.Product)
                         .ThenInclude(p => p.ProductImages)
+                    .Include(v => v.Product)
+                        .ThenInclude(p => p.ProductVariants)   // 🔥 needed for discount
                     .Include(v => v.User)
                     .OrderByDescending(v => v.ViewedAt)
                     .ToListAsync();
@@ -78,8 +115,30 @@ namespace Backend_Api.Controllers
 
                     if (v.Product?.ProductImages != null && v.Product.ProductImages.Any())
                     {
-                        var coverImage = v.Product.ProductImages.FirstOrDefault(i => i.IsCover.HasValue && i.IsCover.Value);
-                        productImage = coverImage?.ImageUrl ?? v.Product.ProductImages.FirstOrDefault()?.ImageUrl;
+                        var coverImage = v.Product.ProductImages
+                            .FirstOrDefault(i => i.IsCover.HasValue && i.IsCover.Value);
+
+                        productImage = coverImage?.ImageUrl
+                                       ?? v.Product.ProductImages.FirstOrDefault()?.ImageUrl;
+                    }
+
+                    // 🔥 Cheapest variant logic (same as ProductsController)
+                    var cheapestVariant = v.Product?.ProductVariants
+                        .OrderBy(x => CalculateFinalPrice(x))
+                        .FirstOrDefault();
+
+                    decimal originalPrice = cheapestVariant?.Price ?? 0;
+                    decimal discountPrice = cheapestVariant != null
+                        ? CalculateFinalPrice(cheapestVariant)
+                        : 0;
+
+                    bool isDiscounted = discountPrice < originalPrice;
+
+                    decimal discountPercentage = 0;
+                    if (originalPrice > 0)
+                    {
+                        discountPercentage = ((originalPrice - discountPrice) / originalPrice) * 100;
+                        discountPercentage = Math.Round(discountPercentage, 2);
                     }
 
                     return new ProductViewDTO
@@ -88,6 +147,13 @@ namespace Backend_Api.Controllers
                         ProductId = v.ProductId,
                         ProductName = v.Product?.ProductName ?? "Unknown",
                         ProductImage = productImage,
+
+                        // 🔥 Discounted pricing info
+                        OriginalPrice = originalPrice,
+                        DiscountPrice = discountPrice,
+                        DiscountPercentage = discountPercentage,
+                        IsDiscounted = isDiscounted,
+
                         UserId = v.UserId,
                         Username = v.User?.Username ?? "Guest",
                         ViewedAt = v.ViewedAt
@@ -98,7 +164,11 @@ namespace Backend_Api.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to fetch product views", details = ex.Message });
+                return StatusCode(500, new
+                {
+                    error = "Failed to fetch product views",
+                    details = ex.Message
+                });
             }
         }
 
@@ -134,9 +204,32 @@ namespace Backend_Api.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Failed to delete old product views", details = ex.Message });
+                return StatusCode(500, new
+                {
+                    error = "Failed to delete old product views",
+                    details = ex.Message
+                });
             }
         }
 
+        // =====================================================
+        // FINAL PRICE CALCULATOR (Same as ProductsController)
+        // =====================================================
+        private decimal CalculateFinalPrice(ProductVariant v)
+        {
+            decimal price = v.Price ?? 0;
+            var now = DateTime.UtcNow;
+
+            if (v.DiscountStart.HasValue && now < v.DiscountStart) return price;
+            if (v.DiscountEnd.HasValue && now > v.DiscountEnd) return price;
+
+            if (v.DiscountPercentage.HasValue && v.DiscountPercentage > 0)
+                price -= price * (v.DiscountPercentage.Value / 100);
+
+            if (v.DiscountAmount.HasValue && v.DiscountAmount > 0)
+                price -= v.DiscountAmount.Value;
+
+            return price < 0 ? 0 : price;
+        }
     }
 }
