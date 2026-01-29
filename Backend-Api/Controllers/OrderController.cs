@@ -1,4 +1,4 @@
-﻿using Backend_Api.Data;
+using Backend_Api.Data;
 using Backend_Api.Models;
 using Backend_Api.Models.Model_Create;
 using Backend_Api.Models.Model_DTO;
@@ -57,8 +57,6 @@ namespace Backend_Api.Controllers
                         CreatedAt = DateTime.UtcNow
                     });
 
-                await _context.SaveChangesAsync();
-
                 // ---------------- Notify Admin ----------------
                 var adminUsers = await _context.UserRoles
                     .Where(ur => ur.Role.RoleName == "Admin")
@@ -80,7 +78,22 @@ namespace Backend_Api.Controllers
                     });
                 }
 
+                // ---------------- Notify User ----------------
+                _context.Notifications.Add(new Notification
+                {
+                    UserId = order.UserId,
+                    Title = "Order Placed Successfully",
+                    Message = $"Your order #{order.OrderId} has been placed successfully.",
+                    Type = "Order",
+                    TargetAudience = "User",
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                });
+
                 await _context.SaveChangesAsync();
+
+                // ---------------- Send Email Immediately to User ----------------
+                await SendOrderEmailToUser(order.OrderId);
 
                 return Ok(new
                 {
@@ -94,7 +107,7 @@ namespace Backend_Api.Controllers
                 return StatusCode(500, new
                 {
                     success = false,
-                    message = "An error occurred while creating the order. Please try again."
+                    message = "An error occurred while creating the order."
                 });
             }
         }
@@ -108,17 +121,32 @@ namespace Backend_Api.Controllers
 
             try
             {
-                var order = await _context.Orders.FindAsync(id);
+                var order = await _context.Orders
+                    .Include(o => o.User)
+                    .FirstOrDefaultAsync(o => o.OrderId == id);
+
                 if (order == null) return NotFound(new { message = "Order not found." });
 
                 order.OrderStatus = status;
                 order.UpdatedAt = DateTime.UtcNow;
-
                 await _context.SaveChangesAsync();
 
-                // If order is cancelled, notify admin
+                // ---------------- Notify User on Every Status Update ----------------
+                _context.Notifications.Add(new Notification
+                {
+                    UserId = order.UserId,
+                    Title = "Order Status Updated",
+                    Message = $"Your order #{order.OrderId} status has been changed to '{status}'.",
+                    Type = "Order",
+                    TargetAudience = "User",
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                // ---------------- If Order is Cancelled ----------------
                 if (status.ToLower() == "cancelled" || status.ToLower() == "canceled")
                 {
+                    // Notify Admin
                     var adminUsers = await _context.UserRoles
                         .Where(ur => ur.Role.RoleName == "Admin")
                         .Select(ur => ur.User)
@@ -139,10 +167,13 @@ namespace Backend_Api.Controllers
                         });
                     }
 
-                    await _context.SaveChangesAsync();
+                    // Send Cancel Email to User
+                    await SendOrderCancelEmailToUser(order.OrderId);
                 }
 
-                return Ok(new { message = "Order status updated successfully." });
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Order status updated and notifications sent successfully." });
             }
             catch
             {
@@ -150,42 +181,14 @@ namespace Backend_Api.Controllers
             }
         }
 
-        // ================= MARK NOTIFICATION AS READ =================
-        [HttpPut("notification/mark-read/{notificationId}")]
-        public async Task<IActionResult> MarkNotificationAsRead(long notificationId)
-        {
-            var notification = await _context.Notifications.FindAsync(notificationId);
-            if (notification == null) return NotFound(new { message = "Notification not found." });
-
-            if (notification.IsRead == true) return Ok(new { message = "Already marked as read." });
-
-            notification.IsRead = true;
-            await _context.SaveChangesAsync();
-
-            // Send email to user after admin sees it
-            if (!string.IsNullOrWhiteSpace(notification.Message))
-            {
-                if (notification.Type == "Order")
-                    await SendOrderEmailToUser(notification.Message);
-                else if (notification.Type == "OrderCancel")
-                    await SendOrderCancelEmailToUser(notification.Message);
-            }
-
-            return Ok(new { message = "Notification marked as read and user notified." });
-        }
-
         // ================= SEND ORDER EMAIL =================
-        private async Task SendOrderEmailToUser(string notificationMessage)
+        private async Task SendOrderEmailToUser(long orderId)
         {
             try
             {
-                var parts = notificationMessage.Split(' ');
-                if (!long.TryParse(parts[1].TrimStart('#'), out var orderId)) return;
-
                 var order = await _context.Orders
-                    .Where(o => o.OrderId == orderId)
                     .Include(o => o.User)
-                    .FirstOrDefaultAsync();
+                    .FirstOrDefaultAsync(o => o.OrderId == orderId);
 
                 if (order == null || order.User == null || string.IsNullOrWhiteSpace(order.User.Email))
                     return;
@@ -193,6 +196,7 @@ namespace Backend_Api.Controllers
                 var orderItems = await _context.OrderItems
                     .Where(oi => oi.OrderId == orderId)
                     .Include(oi => oi.Variant)
+                        .ThenInclude(v => v.Product)
                     .ToListAsync();
 
                 string body = $"<h3>We have received your order #{order.OrderId}</h3>";
@@ -200,187 +204,109 @@ namespace Backend_Api.Controllers
                 body += "<h4>Order Items:</h4><ul>";
 
                 foreach (var item in orderItems)
-                    body += $"<li>{item.Variant?.Product.ProductName} - {item.Quantity} x {item.Price:C} = {item.Quantity * item.Price:C}</li>";
+                    body += $"<li>{item.Variant?.Product?.ProductName} - {item.Quantity} x {item.Price:C}</li>";
 
                 body += "</ul><p>Thank you for shopping with us!</p>";
 
                 await _emailService.SendEmailAsync(order.User.Email, "Your Order has been received", body);
             }
-            catch
-            {
-                // Optional: log error
-            }
+            catch { }
         }
 
         // ================= SEND ORDER CANCEL EMAIL =================
-        private async Task SendOrderCancelEmailToUser(string notificationMessage)
+        private async Task SendOrderCancelEmailToUser(long orderId)
         {
             try
             {
-                var parts = notificationMessage.Split(' ');
-                if (!long.TryParse(parts[1].TrimStart('#'), out var orderId)) return;
-
                 var order = await _context.Orders
-                    .Where(o => o.OrderId == orderId)
                     .Include(o => o.User)
-                    .FirstOrDefaultAsync();
+                    .FirstOrDefaultAsync(o => o.OrderId == orderId);
 
                 if (order == null || order.User == null || string.IsNullOrWhiteSpace(order.User.Email))
                     return;
 
                 string body = $"<h3>Your order #{order.OrderId} has been cancelled</h3>";
-                body += "<p>We have processed the cancellation of your order.</p>";
-                body += "<p>If you have already made payment, the refund will be processed as per our policy.</p>";
-                body += "<p>Thank you!</p>";
+                body += "<p>If you have already paid, your refund will be processed according to our policy.</p>";
 
                 await _emailService.SendEmailAsync(order.User.Email, "Order Cancelled", body);
             }
-            catch
-            {
-                // Optional: log error
-            }
+            catch { }
         }
 
         // ================= GET ALL ORDERS =================
         [HttpGet]
         public async Task<IActionResult> GetAllOrders()
         {
-            try
-            {
-                var orders = await _context.Orders
-                    .Select(o => new OrderDTO
-                    {
-                        OrderId = o.OrderId,
-                        UserId = o.UserId,
-                        TotalAmount = o.TotalAmount,
-                        PaymentMethodId = o.PaymentMethodId,
-                        OrderStatus = o.OrderStatus,
-                        CreatedAt = o.CreatedAt,
-                        UpdatedAt = o.UpdatedAt
-                    })
-                    .ToListAsync();
+            var orders = await _context.Orders
+                .Select(o => new OrderDTO
+                {
+                    OrderId = o.OrderId,
+                    UserId = o.UserId,
+                    TotalAmount = o.TotalAmount,
+                    PaymentMethodId = o.PaymentMethodId,
+                    OrderStatus = o.OrderStatus,
+                    CreatedAt = o.CreatedAt,
+                    UpdatedAt = o.UpdatedAt
+                })
+                .ToListAsync();
 
-                if (!orders.Any()) return NotFound(new { message = "No orders found." });
-
-                return Ok(orders);
-            }
-            catch
-            {
-                return StatusCode(500, new { message = "Failed to fetch orders." });
-            }
+            return Ok(orders);
         }
 
         // ================= GET ORDER BY ID =================
         [HttpGet("{id}")]
         public async Task<IActionResult> GetOrderById(long id)
         {
-            if (id <= 0) return BadRequest(new { message = "Invalid order ID." });
+            var order = await _context.Orders
+                .Where(o => o.OrderId == id)
+                .Select(o => new OrderDTO
+                {
+                    OrderId = o.OrderId,
+                    UserId = o.UserId,
+                    TotalAmount = o.TotalAmount,
+                    PaymentMethodId = o.PaymentMethodId,
+                    OrderStatus = o.OrderStatus,
+                    CreatedAt = o.CreatedAt,
+                    UpdatedAt = o.UpdatedAt
+                })
+                .FirstOrDefaultAsync();
 
-            try
-            {
-                var order = await _context.Orders
-                    .Where(o => o.OrderId == id)
-                    .Select(o => new OrderDTO
-                    {
-                        OrderId = o.OrderId,
-                        UserId = o.UserId,
-                        TotalAmount = o.TotalAmount,
-                        PaymentMethodId = o.PaymentMethodId,
-                        OrderStatus = o.OrderStatus,
-                        CreatedAt = o.CreatedAt,
-                        UpdatedAt = o.UpdatedAt
-                    })
-                    .FirstOrDefaultAsync();
-
-                if (order == null) return NotFound(new { message = "Order not found." });
-
-                return Ok(order);
-            }
-            catch
-            {
-                return StatusCode(500, new { message = "Failed to fetch the order." });
-            }
+            if (order == null) return NotFound();
+            return Ok(order);
         }
 
         // ================= GET ORDERS BY USER =================
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetOrdersByUser(int userId)
         {
-            if (userId <= 0) return BadRequest(new { message = "Invalid user ID." });
+            var orders = await _context.Orders
+                .Where(o => o.UserId == userId)
+                .Select(o => new OrderDTO
+                {
+                    OrderId = o.OrderId,
+                    UserId = o.UserId,
+                    TotalAmount = o.TotalAmount,
+                    PaymentMethodId = o.PaymentMethodId,
+                    OrderStatus = o.OrderStatus,
+                    CreatedAt = o.CreatedAt,
+                    UpdatedAt = o.UpdatedAt
+                })
+                .ToListAsync();
 
-            try
-            {
-                var orders = await _context.Orders
-                    .Where(o => o.UserId == userId)
-                    .Select(o => new OrderDTO
-                    {
-                        OrderId = o.OrderId,
-                        UserId = o.UserId,
-                        TotalAmount = o.TotalAmount,
-                        PaymentMethodId = o.PaymentMethodId,
-                        OrderStatus = o.OrderStatus,
-                        CreatedAt = o.CreatedAt,
-                        UpdatedAt = o.UpdatedAt
-                    })
-                    .ToListAsync();
-
-                if (!orders.Any()) return NotFound(new { message = "No orders found for this user." });
-
-                return Ok(orders);
-            }
-            catch
-            {
-                return StatusCode(500, new { message = "Failed to fetch user orders." });
-            }
-        }
-
-        // ================= UPDATE ORDER =================
-        [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateOrder(long id, [FromBody] CreateOrder model)
-        {
-            if (id <= 0) return BadRequest(new { message = "Invalid order ID." });
-            if (model == null) return BadRequest(new { message = "Order data is required." });
-
-            try
-            {
-                var order = await _context.Orders.FindAsync(id);
-                if (order == null) return NotFound(new { message = "Order not found." });
-
-                order.TotalAmount = model.TotalAmount;
-                order.PaymentMethodId = model.PaymentMethodId;
-                order.OrderStatus = model.OrderStatus;
-                order.UpdatedAt = DateTime.UtcNow;
-
-                await _context.SaveChangesAsync();
-
-                return Ok(new { message = "Order updated successfully." });
-            }
-            catch
-            {
-                return StatusCode(500, new { message = "Failed to update order." });
-            }
+            return Ok(orders);
         }
 
         // ================= DELETE ORDER =================
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteOrder(long id)
         {
-            if (id <= 0) return BadRequest(new { message = "Invalid order ID." });
+            var order = await _context.Orders.FindAsync(id);
+            if (order == null) return NotFound();
 
-            try
-            {
-                var order = await _context.Orders.FindAsync(id);
-                if (order == null) return NotFound(new { message = "Order not found." });
+            _context.Orders.Remove(order);
+            await _context.SaveChangesAsync();
 
-                _context.Orders.Remove(order);
-                await _context.SaveChangesAsync();
-
-                return Ok(new { message = "Order deleted successfully." });
-            }
-            catch
-            {
-                return StatusCode(500, new { message = "Failed to delete order." });
-            }
+            return Ok(new { message = "Order deleted successfully." });
         }
     }
 }
