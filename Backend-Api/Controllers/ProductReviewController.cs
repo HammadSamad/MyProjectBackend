@@ -36,7 +36,7 @@ namespace Backend_Api.Controllers
                 var query = _context.ProductReviews
                     .Where(r => r.ProductId == productId)
                     .Include(r => r.User)
-                    .Include(r => r.Images)
+                    .Include(r => r.ReviewImages)
                     .OrderByDescending(r => r.CreatedAt);
 
                 var totalReviews = await query.CountAsync();
@@ -53,13 +53,13 @@ namespace Backend_Api.Controllers
                         UserName = r.User.Username,
                         CreatedAt = r.CreatedAt,
                         UpdatedAt = r.UpdatedAt,
-                        ImageUrl = r.Images.OrderBy(i => i.ReviewImageId)
-                                          .Select(i => i.ImageUrl)
-                                          .FirstOrDefault()
+                        ImageUrl = r.ReviewImages
+                                    .OrderBy(i => i.ReviewImageId)
+                                    .Select(i => i.ImageUrl)
+                                    .FirstOrDefault()
                     })
                     .ToListAsync();
 
-                // Safe Average Rating
                 double averageRating = totalReviews == 0 ? 0 :
                     await _context.ProductReviews
                         .Where(r => r.ProductId == productId)
@@ -125,13 +125,14 @@ namespace Backend_Api.Controllers
 
                 string? imageUrl = null;
 
-                // Save single image if provided
                 if (model.Image != null)
                 {
                     string[] allowedExtensions = { ".jpg", ".jpeg", ".png" };
                     var ext = Path.GetExtension(model.Image.FileName).ToLower();
+
                     if (!allowedExtensions.Contains(ext))
                         return BadRequest(new { error = "Only JPG, JPEG, PNG files are allowed." });
+
                     if (model.Image.Length > 5 * 1024 * 1024)
                         return BadRequest(new { error = "Image size cannot exceed 5 MB." });
 
@@ -149,6 +150,7 @@ namespace Backend_Api.Controllers
                         ReviewId = review.ReviewId,
                         ImageUrl = $"/uploads/reviews/{fileName}"
                     };
+
                     _context.ReviewImages.Add(reviewImage);
                     await _context.SaveChangesAsync();
 
@@ -187,42 +189,36 @@ namespace Backend_Api.Controllers
                 int userId = int.Parse(userIdClaim);
 
                 var review = await _context.ProductReviews
-                    .Include(r => r.Images)
+                    .Include(r => r.ReviewImages)
                     .FirstOrDefaultAsync(r => r.ReviewId == id && r.UserId == userId);
 
                 if (review == null)
                     return NotFound(new { error = "Review not found or you are not authorized." });
 
-                bool duplicate = await _context.ProductReviews
-                    .AnyAsync(r => r.ProductId == review.ProductId &&
-                                   r.UserId == userId &&
-                                   r.ReviewId != review.ReviewId &&
-                                   r.ReviewText == model.ReviewText);
-
-                if (duplicate)
-                    return BadRequest(new { error = "Duplicate review text for this product." });
-
                 review.Rating = model.Rating;
                 review.ReviewText = model.ReviewText;
                 review.UpdatedAt = DateTime.UtcNow;
 
-                string? imageUrl = review.Images.Select(i => i.ImageUrl).FirstOrDefault();
+                string? imageUrl = review.ReviewImages.Select(i => i.ImageUrl).FirstOrDefault();
 
                 if (model.Image != null)
                 {
                     string[] allowedExtensions = { ".jpg", ".jpeg", ".png" };
                     var ext = Path.GetExtension(model.Image.FileName).ToLower();
+
                     if (!allowedExtensions.Contains(ext))
                         return BadRequest(new { error = "Only JPG, JPEG, PNG files are allowed." });
+
                     if (model.Image.Length > 5 * 1024 * 1024)
                         return BadRequest(new { error = "Image size cannot exceed 5 MB." });
 
-                    // Delete old image
-                    var oldImage = review.Images.FirstOrDefault();
+                    var oldImage = review.ReviewImages.FirstOrDefault();
                     if (oldImage != null)
                     {
                         var oldPath = Path.Combine(_env.WebRootPath ?? "wwwroot", oldImage.ImageUrl.TrimStart('/'));
-                        if (System.IO.File.Exists(oldPath)) System.IO.File.Delete(oldPath);
+                        if (System.IO.File.Exists(oldPath))
+                            System.IO.File.Delete(oldPath);
+
                         _context.ReviewImages.Remove(oldImage);
                     }
 
@@ -240,6 +236,7 @@ namespace Backend_Api.Controllers
                         ReviewId = review.ReviewId,
                         ImageUrl = $"/uploads/reviews/{fileName}"
                     };
+
                     _context.ReviewImages.Add(reviewImage);
                     imageUrl = reviewImage.ImageUrl;
                 }
@@ -278,17 +275,18 @@ namespace Backend_Api.Controllers
                 int userId = int.Parse(userIdClaim);
 
                 var review = await _context.ProductReviews
-                    .Include(r => r.Images)
+                    .Include(r => r.ReviewImages)
                     .FirstOrDefaultAsync(r => r.ReviewId == id && r.UserId == userId);
 
                 if (review == null)
                     return NotFound(new { error = "Review not found or you are not authorized." });
 
-                var image = review.Images.FirstOrDefault();
+                var image = review.ReviewImages.FirstOrDefault();
                 if (image != null)
                 {
                     var filePath = Path.Combine(_env.WebRootPath ?? "wwwroot", image.ImageUrl.TrimStart('/'));
-                    if (System.IO.File.Exists(filePath)) System.IO.File.Delete(filePath);
+                    if (System.IO.File.Exists(filePath))
+                        System.IO.File.Delete(filePath);
                 }
 
                 _context.ProductReviews.Remove(review);
@@ -301,11 +299,5 @@ namespace Backend_Api.Controllers
                 return StatusCode(500, new { error = "Failed to delete review.", details = ex.Message });
             }
         }
-    }
-
-    // ================= MODEL FOR SINGLE IMAGE =================
-    public class CreateProductReviewWithImage : CreateProductReview
-    {
-        public IFormFile? Image { get; set; }
     }
 }
