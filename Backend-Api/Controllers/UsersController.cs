@@ -141,25 +141,29 @@ public async Task<IActionResult> Signup([FromBody] Signup dto)
     }
 }
 
-        [HttpPut("update-profile")]
-        public async Task<IActionResult> UpdateProfile([FromForm] UpdateFullProfileDto dto)
+        [HttpPut("update-profile/{id}")]
+        public async Task<IActionResult> UpdateProfile(int id, [FromForm] UpdateFullProfileDto dto)
         {
             try
             {
-                // 1️⃣ Get current user (from claims/JWT)
-                int userId = int.Parse(User.FindFirst("UserId")?.Value ?? "0");
-                if (userId == 0)
+                // 1️⃣ Get logged-in user from JWT
+                int loggedInUserId = int.Parse(User.FindFirst("UserId")?.Value ?? "0");
+                if (loggedInUserId == 0)
                     return Unauthorized(new { message = "User not found." });
 
-                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+                // 🔒 Security check: user can update only their own profile
+                if (loggedInUserId != id)
+                    return Forbid("You are not allowed to update another user's profile.");
+
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == id);
                 if (user == null)
                     return NotFound(new { message = "User not found." });
 
-                var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
+                var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == id);
                 if (profile == null)
                     return NotFound(new { message = "User profile not found." });
 
-                // 2️⃣ Update allowed user fields
+                // 2️⃣ Update user fields
                 if (!string.IsNullOrEmpty(dto.FirstName))
                     user.FirstName = dto.FirstName;
 
@@ -176,7 +180,7 @@ public async Task<IActionResult> Signup([FromBody] Signup dto)
 
                     // Invalidate old OTPs
                     var oldOtps = await _context.UserVerifications
-                        .Where(v => v.UserId == userId && v.Channel == "email" && !(v.IsUsed ?? false))
+                        .Where(v => v.UserId == id && v.Channel == "email" && !(v.IsUsed ?? false))
                         .ToListAsync();
 
                     foreach (var o in oldOtps)
@@ -186,7 +190,7 @@ public async Task<IActionResult> Signup([FromBody] Signup dto)
                     string otp = OTPHelper.GenerateOTP();
                     _context.UserVerifications.Add(new UserVerification
                     {
-                        UserId = userId,
+                        UserId = id,
                         Channel = "email",
                         Code = otp,
                         ExpiresAt = DateTime.UtcNow.AddMinutes(5),
@@ -194,7 +198,11 @@ public async Task<IActionResult> Signup([FromBody] Signup dto)
                         CreatedAt = DateTime.UtcNow
                     });
 
-                    await _emailService.SendEmailAsync(user.Email, "Verify your account", $"Your OTP is: {otp}");
+                    await _emailService.SendEmailAsync(
+                        user.Email,
+                        "Verify your account",
+                        $"Your OTP is: {otp}"
+                    );
                 }
 
                 // 3️⃣ Update profile fields
@@ -203,7 +211,11 @@ public async Task<IActionResult> Signup([FromBody] Signup dto)
 
                 if (dto.ProfileImage != null && dto.ProfileImage.Length > 0)
                 {
-                    var uploadPath = Path.Combine(_config["StoredFilesPath"] ?? "wwwroot/upload", "UserProfiles");
+                    var uploadPath = Path.Combine(
+                        _config["StoredFilesPath"] ?? "wwwroot/upload",
+                        "UserProfiles"
+                    );
+
                     Directory.CreateDirectory(uploadPath);
 
                     var ext = Path.GetExtension(dto.ProfileImage.FileName);
@@ -226,7 +238,7 @@ public async Task<IActionResult> Signup([FromBody] Signup dto)
 
                 profile.UpdatedAt = DateTime.UtcNow;
 
-                // 4️⃣ Save all changes
+                // 4️⃣ Save changes
                 await _context.SaveChangesAsync();
 
                 return Ok(new
