@@ -425,7 +425,7 @@
       },
       {
         "Name": "model",
-        "Type": "Backend_Api.Models.Model_Create.CreateCartItem",
+        "Type": "Backend_Api.Models.Model_Create.UpdateCartItemQuantity",
         "IsRequired": true
       }
     ],
