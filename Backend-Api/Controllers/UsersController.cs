@@ -21,17 +21,20 @@ namespace Backend_Api.Controllers
         private readonly PasswordHasherHelper _passwordHasher;
         private readonly JwtTokenService _jwtService;
         private readonly IEmailService _emailService;
+        private readonly IConfiguration _config;
 
         public UserController(
             LaptopHarbourDbContext context,
             PasswordHasherHelper passwordHasher,
             JwtTokenService jwtService,
-            IEmailService emailService)
+            IEmailService emailService,
+            IConfiguration config)
         {
             _context = context;
             _passwordHasher = passwordHasher;
             _jwtService = jwtService;
             _emailService = emailService;
+            _config = config;
         }
 
         // -----------------------------
@@ -137,6 +140,120 @@ public async Task<IActionResult> Signup([FromBody] Signup dto)
         });
     }
 }
+
+        [HttpPut("update-profile")]
+        public async Task<IActionResult> UpdateProfile([FromForm] UpdateFullProfileDto dto)
+        {
+            try
+            {
+                // 1️⃣ Get current user (from claims/JWT)
+                int userId = int.Parse(User.FindFirst("UserId")?.Value ?? "0");
+                if (userId == 0)
+                    return Unauthorized(new { message = "User not found." });
+
+                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == userId);
+                if (user == null)
+                    return NotFound(new { message = "User not found." });
+
+                var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
+                if (profile == null)
+                    return NotFound(new { message = "User profile not found." });
+
+                // 2️⃣ Update allowed user fields
+                if (!string.IsNullOrEmpty(dto.FirstName))
+                    user.FirstName = dto.FirstName;
+
+                if (!string.IsNullOrEmpty(dto.LastName))
+                    user.LastName = dto.LastName;
+
+                if (!string.IsNullOrEmpty(dto.PhoneNumber))
+                    user.PhoneNumber = dto.PhoneNumber;
+
+                if (!string.IsNullOrEmpty(dto.Email) && dto.Email != user.Email)
+                {
+                    user.Email = dto.Email;
+                    user.IsEmailVerified = false;
+
+                    // Invalidate old OTPs
+                    var oldOtps = await _context.UserVerifications
+                        .Where(v => v.UserId == userId && v.Channel == "email" && !(v.IsUsed ?? false))
+                        .ToListAsync();
+
+                    foreach (var o in oldOtps)
+                        o.IsUsed = true;
+
+                    // Generate new OTP
+                    string otp = OTPHelper.GenerateOTP();
+                    _context.UserVerifications.Add(new UserVerification
+                    {
+                        UserId = userId,
+                        Channel = "email",
+                        Code = otp,
+                        ExpiresAt = DateTime.UtcNow.AddMinutes(5),
+                        IsUsed = false,
+                        CreatedAt = DateTime.UtcNow
+                    });
+
+                    await _emailService.SendEmailAsync(user.Email, "Verify your account", $"Your OTP is: {otp}");
+                }
+
+                // 3️⃣ Update profile fields
+                if (!string.IsNullOrEmpty(dto.Bio))
+                    profile.Bio = dto.Bio;
+
+                if (dto.ProfileImage != null && dto.ProfileImage.Length > 0)
+                {
+                    var uploadPath = Path.Combine(_config["StoredFilesPath"] ?? "wwwroot/upload", "UserProfiles");
+                    Directory.CreateDirectory(uploadPath);
+
+                    var ext = Path.GetExtension(dto.ProfileImage.FileName);
+                    var imageName = Guid.NewGuid() + ext;
+                    var filePath = Path.Combine(uploadPath, imageName);
+
+                    using var stream = System.IO.File.Create(filePath);
+                    await dto.ProfileImage.CopyToAsync(stream);
+
+                    // Delete old image
+                    if (!string.IsNullOrEmpty(profile.ProfileImage))
+                    {
+                        var oldFile = Path.Combine(uploadPath, profile.ProfileImage);
+                        if (System.IO.File.Exists(oldFile))
+                            System.IO.File.Delete(oldFile);
+                    }
+
+                    profile.ProfileImage = imageName;
+                }
+
+                profile.UpdatedAt = DateTime.UtcNow;
+
+                // 4️⃣ Save all changes
+                await _context.SaveChangesAsync();
+
+                return Ok(new
+                {
+                    message = "Profile updated successfully.",
+                    user = new
+                    {
+                        user.UserId,
+                        user.FirstName,
+                        user.LastName,
+                        user.Email,
+                        user.PhoneNumber,
+                        profile.Bio,
+                        profile.ProfileImage
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    message = "Error occurred while updating profile.",
+                    error = ex.Message
+                });
+            }
+        }
+
 
 
 
