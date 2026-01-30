@@ -238,12 +238,56 @@ public async Task<IActionResult> Signup([FromBody] Signup dto)
 
                 profile.UpdatedAt = DateTime.UtcNow;
 
-                // 4️⃣ Save changes
+                // 4️⃣ Address update / create
+                if (dto.CityId.HasValue && !string.IsNullOrWhiteSpace(dto.AddressLine1))
+                {
+                    Address? address = null;
+
+                    // Update existing address
+                    if (dto.AddressId.HasValue)
+                    {
+                        address = await _context.Addresses
+                            .FirstOrDefaultAsync(a => a.AddressId == dto.AddressId && a.UserId == id);
+
+                        if (address == null)
+                            return NotFound(new { message = "Address not found." });
+                    }
+                    // Create new address
+                    else
+                    {
+                        address = new Address
+                        {
+                            UserId = id,
+                            CreatedAt = DateTime.UtcNow
+                        };
+                        _context.Addresses.Add(address);
+                    }
+
+                    // Default address logic
+                    if (dto.IsDefault.GetValueOrDefault())
+                    {
+                        var defaultAddresses = await _context.Addresses
+                            .Where(a => a.UserId == id && a.IsDefault == true && a.AddressId != address.AddressId)
+                            .ToListAsync();
+
+                        foreach (var addr in defaultAddresses)
+                            addr.IsDefault = false;
+                    }
+
+                    address.CityId = dto.CityId.Value;
+                    address.AddressLine1 = dto.AddressLine1;
+                    address.AddressLine2 = dto.AddressLine2;
+                    address.PostalCode = dto.PostalCode;
+                    address.IsDefault = dto.IsDefault.GetValueOrDefault();
+                    address.UpdatedAt = DateTime.UtcNow;
+                }
+
+                // 5️⃣ Save all changes
                 await _context.SaveChangesAsync();
 
                 return Ok(new
                 {
-                    message = "Profile updated successfully.",
+                    message = "Profile and address updated successfully.",
                     user = new
                     {
                         user.UserId,
@@ -265,6 +309,7 @@ public async Task<IActionResult> Signup([FromBody] Signup dto)
                 });
             }
         }
+
 
 
 
