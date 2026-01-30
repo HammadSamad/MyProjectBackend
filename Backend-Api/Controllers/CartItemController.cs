@@ -33,7 +33,6 @@ namespace Backend_Api.Controllers
                 if (cart == null)
                     return NotFound(new { message = "Cart not found." });
 
-                // 🔥 Include color/spec option in uniqueness check
                 var existingItem = await _context.CartItems
                     .FirstOrDefaultAsync(ci =>
                         ci.CartId == model.CartId &&
