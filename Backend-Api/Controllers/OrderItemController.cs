@@ -4,6 +4,10 @@ using Backend_Api.Models.Model_Create;
 using Backend_Api.Models.Model_DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Backend_Api.Controllers
 {
@@ -19,7 +23,6 @@ namespace Backend_Api.Controllers
         }
 
         // ================= CREATE =================
-        // POST: api/OrderItem
         [HttpPost]
         public async Task<IActionResult> CreateOrderItem([FromBody] CreateOrderitem model)
         {
@@ -29,54 +32,48 @@ namespace Backend_Api.Controllers
             if (model.Quantity <= 0)
                 return BadRequest(new { message = "Quantity must be greater than zero." });
 
-            if (model.Price <= 0)
-                return BadRequest(new { message = "Price must be greater than zero." });
-
             try
             {
-                // Check Order
                 var order = await _context.Orders.FirstOrDefaultAsync(o => o.OrderId == model.OrderId);
                 if (order == null)
                     return BadRequest(new { message = "Order does not exist." });
 
-                // Check Product Variant
-                var variantExists = await _context.ProductVariants
-                    .AnyAsync(v => v.VariantId == model.VariantId);
+                var variant = await _context.ProductVariants
+                    .Include(v => v.Product)
+                        .ThenInclude(p => p.ProductImages)
+                    .FirstOrDefaultAsync(v => v.VariantId == model.VariantId);
 
-                if (!variantExists)
+                if (variant == null)
                     return BadRequest(new { message = "Product Variant does not exist." });
+
+                // Calculate final price automatically
+                decimal finalPrice = CalculateFinalPrice(variant);
 
                 var orderItem = new OrderItem
                 {
                     OrderId = model.OrderId,
                     VariantId = model.VariantId,
                     Quantity = model.Quantity,
-                    Price = model.Price,
+                    Price = finalPrice,
+                    VariantSpecificationOptionsId = model.VariantSpecificationOptionsId,
                     CreatedAt = DateTime.UtcNow
                 };
 
                 _context.OrderItems.Add(orderItem);
 
-                // -------------------------------
                 // Update UserRecentOrder
-                // -------------------------------
                 var recentOrder = await _context.UserRecentOrders
                     .FirstOrDefaultAsync(r => r.UserId == order.UserId && r.OrderId == order.OrderId);
 
                 if (recentOrder != null)
-                {
                     recentOrder.CreatedAt = DateTime.UtcNow;
-                }
                 else
-                {
-                    var newRecent = new UserRecentOrder
+                    _context.UserRecentOrders.Add(new UserRecentOrder
                     {
                         UserId = order.UserId,
                         OrderId = order.OrderId,
                         CreatedAt = DateTime.UtcNow
-                    };
-                    _context.UserRecentOrders.Add(newRecent);
-                }
+                    });
 
                 await _context.SaveChangesAsync();
 
@@ -97,28 +94,21 @@ namespace Backend_Api.Controllers
         }
 
         // ================= GET ALL =================
-        // GET: api/OrderItem
         [HttpGet]
         public async Task<ActionResult<IEnumerable<OrderItemDTO>>> GetAllOrderItems()
         {
             try
             {
                 var items = await _context.OrderItems
-                    .Select(oi => new OrderItemDTO
-                    {
-                        OrderItemId = oi.OrderItemId,
-                        OrderId = oi.OrderId,
-                        VariantId = oi.VariantId,
-                        Quantity = oi.Quantity,
-                        Price = oi.Price,
-                        CreatedAt = oi.CreatedAt
-                    })
+                    .Include(oi => oi.Variant)
+                        .ThenInclude(v => v.Product)
+                            .ThenInclude(p => p.ProductImages)
                     .ToListAsync();
 
-                if (items.Count == 0)
+                if (!items.Any())
                     return NotFound(new { message = "No order items found." });
 
-                return Ok(items);
+                return Ok(items.Select(MapToDTO).ToList());
             }
             catch (Exception ex)
             {
@@ -127,7 +117,6 @@ namespace Backend_Api.Controllers
         }
 
         // ================= GET BY ID =================
-        // GET: api/OrderItem/5
         [HttpGet("{id}")]
         public async Task<ActionResult<OrderItemDTO>> GetOrderItemById(long id)
         {
@@ -137,22 +126,15 @@ namespace Backend_Api.Controllers
             try
             {
                 var item = await _context.OrderItems
-                    .Where(oi => oi.OrderItemId == id)
-                    .Select(oi => new OrderItemDTO
-                    {
-                        OrderItemId = oi.OrderItemId,
-                        OrderId = oi.OrderId,
-                        VariantId = oi.VariantId,
-                        Quantity = oi.Quantity,
-                        Price = oi.Price,
-                        CreatedAt = oi.CreatedAt
-                    })
-                    .FirstOrDefaultAsync();
+                    .Include(oi => oi.Variant)
+                        .ThenInclude(v => v.Product)
+                            .ThenInclude(p => p.ProductImages)
+                    .FirstOrDefaultAsync(oi => oi.OrderItemId == id);
 
                 if (item == null)
                     return NotFound(new { message = "Order item not found." });
 
-                return Ok(item);
+                return Ok(MapToDTO(item));
             }
             catch (Exception ex)
             {
@@ -161,7 +143,6 @@ namespace Backend_Api.Controllers
         }
 
         // ================= GET BY ORDER =================
-        // GET: api/OrderItem/order/10
         [HttpGet("order/{orderId}")]
         public async Task<ActionResult<IEnumerable<OrderItemDTO>>> GetItemsByOrder(long orderId)
         {
@@ -172,21 +153,15 @@ namespace Backend_Api.Controllers
             {
                 var items = await _context.OrderItems
                     .Where(oi => oi.OrderId == orderId)
-                    .Select(oi => new OrderItemDTO
-                    {
-                        OrderItemId = oi.OrderItemId,
-                        OrderId = oi.OrderId,
-                        VariantId = oi.VariantId,
-                        Quantity = oi.Quantity,
-                        Price = oi.Price,
-                        CreatedAt = oi.CreatedAt
-                    })
+                    .Include(oi => oi.Variant)
+                        .ThenInclude(v => v.Product)
+                            .ThenInclude(p => p.ProductImages)
                     .ToListAsync();
 
-                if (items.Count == 0)
+                if (!items.Any())
                     return NotFound(new { message = "No order items found for this order." });
 
-                return Ok(items);
+                return Ok(items.Select(MapToDTO).ToList());
             }
             catch (Exception ex)
             {
@@ -195,7 +170,6 @@ namespace Backend_Api.Controllers
         }
 
         // ================= UPDATE =================
-        // PUT: api/OrderItem/5
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateOrderItem(long id, [FromBody] CreateOrderitem model)
         {
@@ -208,24 +182,25 @@ namespace Backend_Api.Controllers
             if (model.Quantity <= 0)
                 return BadRequest(new { message = "Quantity must be greater than zero." });
 
-            if (model.Price <= 0)
-                return BadRequest(new { message = "Price must be greater than zero." });
-
             try
             {
                 var orderItem = await _context.OrderItems.FindAsync(id);
                 if (orderItem == null)
                     return NotFound(new { message = "Order item not found." });
 
-                var variantExists = await _context.ProductVariants
-                    .AnyAsync(v => v.VariantId == model.VariantId);
+                var variant = await _context.ProductVariants
+                    .Include(v => v.Product)
+                    .FirstOrDefaultAsync(v => v.VariantId == model.VariantId);
 
-                if (!variantExists)
+                if (variant == null)
                     return BadRequest(new { message = "Product Variant does not exist." });
 
                 orderItem.VariantId = model.VariantId;
                 orderItem.Quantity = model.Quantity;
-                orderItem.Price = model.Price;
+                orderItem.VariantSpecificationOptionsId = model.VariantSpecificationOptionsId;
+
+                // Automatically update price based on variant
+                orderItem.Price = CalculateFinalPrice(variant);
 
                 await _context.SaveChangesAsync();
 
@@ -242,7 +217,6 @@ namespace Backend_Api.Controllers
         }
 
         // ================= DELETE =================
-        // DELETE: api/OrderItem/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteOrderItem(long id)
         {
@@ -268,6 +242,63 @@ namespace Backend_Api.Controllers
             {
                 return StatusCode(500, new { message = "Unexpected error occurred.", details = ex.Message });
             }
+        }
+
+        // ================= HELPER: MAP DTO =================
+        private OrderItemDTO MapToDTO(OrderItem oi)
+        {
+            var variant = oi.Variant;
+            var product = variant.Product;
+
+            string coverImage = product.ProductImages.FirstOrDefault(i => i.IsCover == true)?.ImageUrl ?? "";
+
+            decimal finalPrice = CalculateFinalPrice(variant);
+
+            var specs = _context.VariantSpecificationOptions
+                .Where(vso => vso.VariantId == oi.VariantId &&
+                             (vso.Option.Specification.SpecificationName == "RAM" ||
+                              vso.Option.Specification.SpecificationName == "Storage" ||
+                              vso.Option.Specification.SpecificationName == "Color"))
+                .Select(vso => new VariantSpecificationOptionDTO
+                {
+                    OptionId = vso.OptionId,
+                    SpecificationName = vso.Option.Specification.SpecificationName,
+                    OptionValue = vso.Option.OptionValue
+                })
+                .ToList();
+
+            return new OrderItemDTO
+            {
+                OrderItemId = oi.OrderItemId,
+                OrderId = oi.OrderId,
+                VariantId = oi.VariantId,
+                Quantity = oi.Quantity,
+                Price = finalPrice,
+                CreatedAt = oi.CreatedAt,
+                ProductName = product.ProductName,
+                Image = coverImage,
+                VariantSpecifications = specs,
+                VariantSpecificationOptionsId = oi.VariantSpecificationOptionsId
+            };
+        }
+
+        // ================= HELPER: CALCULATE FINAL PRICE =================
+        private decimal CalculateFinalPrice(ProductVariant variant)
+        {
+            decimal finalPrice = variant.Price ?? 0;
+            var now = DateTime.UtcNow;
+
+            if ((!variant.DiscountStart.HasValue || variant.DiscountStart.Value <= now) &&
+                (!variant.DiscountEnd.HasValue || variant.DiscountEnd.Value >= now))
+            {
+                if (variant.DiscountPercentage.HasValue && variant.DiscountPercentage.Value > 0)
+                    finalPrice -= finalPrice * (variant.DiscountPercentage.Value / 100);
+
+                if (variant.DiscountAmount.HasValue && variant.DiscountAmount.Value > 0)
+                    finalPrice -= variant.DiscountAmount.Value;
+            }
+
+            return finalPrice < 0 ? 0 : finalPrice;
         }
     }
 }

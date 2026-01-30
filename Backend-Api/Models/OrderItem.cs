@@ -15,9 +15,13 @@ public partial class OrderItem
 
     public decimal? Price { get; set; }
 
+    public int VariantSpecificationOptionsId { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public virtual Order Order { get; set; } = null!;
 
     public virtual ProductVariant Variant { get; set; } = null!;
+
+    public virtual SpecificationOption VariantSpecificationOptions { get; set; } = null!;
 }

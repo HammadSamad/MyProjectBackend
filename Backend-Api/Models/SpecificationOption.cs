@@ -15,6 +15,8 @@ public partial class SpecificationOption
 
     public virtual ICollection<CartItem> CartItems { get; set; } = new List<CartItem>();
 
+    public virtual ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
+
     public virtual ICollection<ProductSpecificationValue> ProductSpecificationValues { get; set; } = new List<ProductSpecificationValue>();
 
     public virtual SpecificationDefinition Specification { get; set; } = null!;

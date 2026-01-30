@@ -103,7 +103,7 @@ public class BrandController : ControllerBase
                 return BadRequest(new { message = "BrandName is required." });
 
             bool exists = await _context.Brands
-                .AnyAsync(b => b.BrandName.ToLower() == model.BrandName.ToLower());
+                .AnyAsync(b => b.BrandName!.ToLower() == model.BrandName.ToLower());
 
             if (exists)
                 return BadRequest(new { message = "Brand with this name already exists." });

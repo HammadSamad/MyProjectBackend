@@ -468,7 +468,7 @@ public partial class LaptopHarbourDbContext : DbContext
 
         modelBuilder.Entity<OrderItem>(entity =>
         {
-            entity.HasKey(e => e.OrderItemId).HasName("PK__order_it__3764B6BC30F2AEFE");
+            entity.HasKey(e => e.OrderItemId).HasName("PK__tmp_ms_x__3764B6BCA5A9F060");
 
             entity.ToTable("order_items", tb => tb.HasTrigger("trg_DecreaseStock_OnOrder"));
 
@@ -482,16 +482,22 @@ public partial class LaptopHarbourDbContext : DbContext
                 .HasColumnName("price");
             entity.Property(e => e.Quantity).HasColumnName("quantity");
             entity.Property(e => e.VariantId).HasColumnName("variant_id");
+            entity.Property(e => e.VariantSpecificationOptionsId).HasColumnName("variant_specification_options_id");
 
             entity.HasOne(d => d.Order).WithMany(p => p.OrderItems)
                 .HasForeignKey(d => d.OrderId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__order_ite__order__32AB8735");
+                .HasConstraintName("FK__order_ite__order__4EA8A765");
 
             entity.HasOne(d => d.Variant).WithMany(p => p.OrderItems)
                 .HasForeignKey(d => d.VariantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__order_ite__varia__1A34DF26");
+                .HasConstraintName("FK__order_ite__varia__4DB4832C");
+
+            entity.HasOne(d => d.VariantSpecificationOptions).WithMany(p => p.OrderItems)
+                .HasForeignKey(d => d.VariantSpecificationOptionsId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK__order_ite__varia__4F9CCB9E");
         });
 
         modelBuilder.Entity<PasswordResetToken>(entity =>
