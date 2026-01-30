@@ -210,20 +210,15 @@ namespace Backend_Api.Controllers
                 if (variant.Stock.HasValue && finalQuantity > variant.Stock.Value)
                     finalQuantity = variant.Stock.Value;
 
-                // Only update quantity
                 item.Quantity = finalQuantity;
-
                 await _context.SaveChangesAsync();
+
+                var updatedItem = await GetCartItemDTO(item.CartItemId);
 
                 return Ok(new
                 {
                     message = $"Cart item updated successfully. Quantity capped at stock ({variant.Stock ?? 0}).",
-                    data = new
-                    {
-                        item.CartItemId,
-                        item.CartId,
-                        item.Quantity
-                    }
+                    data = updatedItem
                 });
             }
             catch (Exception ex)
@@ -284,29 +279,59 @@ namespace Backend_Api.Controllers
         // ================= PRIVATE HELPER: FETCH CART ITEM DTO =================
         private async Task<CartItemDTO?> GetCartItemDTO(int cartItemId)
         {
+            // Fetch cart item with variant, product, product images, and variant specification options + option + specification
             var item = await _context.CartItems
-                .Include(ci => ci.Cart)
-                .Include(ci => ci.Variant)
-                    .ThenInclude(v => v.Product)
-                        .ThenInclude(p => p.ProductImages)
-                .Include(ci => ci.VariantSpecificationOptions)
-                    .ThenInclude(vso => vso.Specification)
-                .FirstOrDefaultAsync(ci => ci.CartItemId == cartItemId);
+    .Include(ci => ci.Cart)
+    .Include(ci => ci.Variant)
+        .ThenInclude(v => v.Product)
+            .ThenInclude(p => p.ProductImages)
+    .Include(ci => ci.VariantSpecificationOptions)   // load SpecificationOption
+        .ThenInclude(vso => vso.Specification)      // load Specification from SpecificationOption
+    .FirstOrDefaultAsync(ci => ci.CartItemId == cartItemId);
+
 
             if (item == null) return null;
 
-            // Map specs
-            string? selectedColor = null;
-            string? ram = null;
-            string? storage = null;
+            var variant = item.Variant;
+            var product = variant.Product;
 
-            var specOption = item.VariantSpecificationOptions;
-            if (specOption.Specification.SpecificationName == "Color")
-                selectedColor = specOption.OptionValue;
-            else if (specOption.Specification.SpecificationName == "RAM")
-                ram = specOption.OptionValue;
-            else if (specOption.Specification.SpecificationName == "Storage")
-                storage = specOption.OptionValue;
+            // Get cover image
+            string coverImage = product.ProductImages
+                .OrderByDescending(pi => pi.IsCover ?? false)
+                .Select(pi => pi.ImageUrl)
+                .FirstOrDefault() ?? "";
+
+            // Calculate final price considering discounts
+            decimal finalPrice = variant.Price ?? 0;
+            var now = DateTime.UtcNow;
+
+            if ((!variant.DiscountStart.HasValue || variant.DiscountStart.Value <= now) &&
+                (!variant.DiscountEnd.HasValue || variant.DiscountEnd.Value >= now))
+            {
+                if (variant.DiscountPercentage.HasValue && variant.DiscountPercentage.Value > 0)
+                    finalPrice -= finalPrice * (variant.DiscountPercentage.Value / 100);
+
+                if (variant.DiscountAmount.HasValue && variant.DiscountAmount.Value > 0)
+                    finalPrice -= variant.DiscountAmount.Value;
+            }
+
+            if (finalPrice < 0) finalPrice = 0;
+
+            // ================= MAP SPECIFICATIONS =================
+            var specs = await _context.VariantSpecificationOptions
+                .Include(vso => vso.Option)
+                    .ThenInclude(o => o.Specification)
+                .Where(vso => vso.VariantId == variant.VariantId &&
+                              (vso.Option.Specification.SpecificationName == "RAM" ||
+                               vso.Option.Specification.SpecificationName == "Storage" ||
+                               vso.Option.Specification.SpecificationName == "Color"))
+                .Select(vso => new VariantSpecificationOptionDTO
+                {
+                    OptionId = vso.OptionId,
+                    SpecificationName = vso.Option.Specification.SpecificationName,
+                    OptionValue = vso.Option.OptionValue
+                })
+                .ToListAsync();
 
             return new CartItemDTO
             {
@@ -316,39 +341,15 @@ namespace Backend_Api.Controllers
                 VariantSpecificationOptionsId = item.VariantSpecificationOptionsId,
                 Quantity = item.Quantity ?? 0,
                 UserId = item.Cart.UserId,
-                Price = item.Variant.Price ?? 0,
-                TotalPrice = GetFinalPrice(item.Variant, item.Quantity ?? 0),
-                ProductName = item.Variant.Product.ProductName,
-                Image = item.Variant.Product.ProductImages
-                            .OrderByDescending(pi => pi.IsCover ?? false)
-                            .Select(pi => pi.ImageUrl)
-                            .FirstOrDefault(),
-                SelectedColor = selectedColor,
-                RAM = ram,
-                Storage = storage,
+                Price = finalPrice,
+                TotalPrice = finalPrice * (item.Quantity ?? 0),
+                ProductName = product.ProductName ?? "",
+                Image = coverImage,
+                VariantSpecifications = specs,
                 CreatedAt = item.CreatedAt
             };
         }
 
 
-        // ================= PRIVATE HELPER: FINAL PRICE CALCULATOR =================
-        private static decimal GetFinalPrice(ProductVariant v, int quantity)
-        {
-            decimal price = v.Price ?? 0;
-            var now = DateTime.UtcNow;
-
-            if (v.DiscountStart.HasValue && now < v.DiscountStart) { }
-            else if (v.DiscountEnd.HasValue && now > v.DiscountEnd) { }
-            else
-            {
-                if (v.DiscountPercentage.HasValue && v.DiscountPercentage > 0)
-                    price -= price * (v.DiscountPercentage.Value / 100);
-
-                if (v.DiscountAmount.HasValue && v.DiscountAmount > 0)
-                    price -= v.DiscountAmount.Value;
-            }
-
-            return (price < 0 ? 0 : price) * quantity;
-        }
     }
 }
