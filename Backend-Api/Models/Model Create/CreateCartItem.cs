@@ -4,8 +4,7 @@
     {
         public int CartId { get; set; }
         public int VariantId { get; set; }
+        public int VariantSpecificationOptionsId { get; set; }
         public int? Quantity { get; set; }
-        // List of selected spec option IDs (Color, RAM, Storage)
-        public List<int> VariantSpecificationOptionIds { get; set; } = new List<int>();
     }
 }

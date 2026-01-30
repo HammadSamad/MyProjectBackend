@@ -24,51 +24,68 @@ namespace Backend_Api.Controllers
         {
             try
             {
-                if (model == null || model.Quantity.GetValueOrDefault() <= 0 || !model.VariantSpecificationOptionIds.Any())
-                    return BadRequest(new { message = "Invalid cart item data, quantity must be > 0, and at least one spec must be selected." });
+                int modelQuantity = model.Quantity ?? 0;
+                if (model == null || modelQuantity <= 0)
+                    return BadRequest(new { message = "Invalid cart item data or quantity must be > 0." });
 
                 var cart = await _context.Carts.FirstOrDefaultAsync(c => c.CartId == model.CartId);
-                if (cart == null) return NotFound(new { message = "Cart not found." });
+                if (cart == null)
+                    return NotFound(new { message = "Cart not found." });
 
                 var variant = await _context.ProductVariants.FindAsync(model.VariantId);
-                if (variant == null) return NotFound(new { message = "Product variant not found." });
+                if (variant == null)
+                    return NotFound(new { message = "Product variant not found." });
 
-                int finalQuantity = model.Quantity.GetValueOrDefault();
+                var existingItem = await _context.CartItems
+                    .FirstOrDefaultAsync(ci =>
+                        ci.CartId == model.CartId &&
+                        ci.VariantId == model.VariantId &&
+                        ci.VariantSpecificationOptionsId == model.VariantSpecificationOptionsId);
+
+                int existingQuantity = existingItem?.Quantity ?? 0;
+                int finalQuantity = existingQuantity + modelQuantity;
+
+                // Cap quantity to stock
                 if (variant.Stock.HasValue && finalQuantity > variant.Stock.Value)
                     finalQuantity = variant.Stock.Value;
 
-                // Create cart item
-                var cartItem = new CartItem
+                if (existingItem != null)
                 {
-                    CartId = model.CartId,
-                    VariantId = model.VariantId,
-                    Quantity = finalQuantity,
-                    CreatedAt = DateTime.UtcNow
-                };
+                    existingItem.Quantity = finalQuantity;
+                    await _context.SaveChangesAsync();
 
-                _context.CartItems.Add(cartItem);
-                await _context.SaveChangesAsync();
-
-                // Save selected spec options
-                foreach (var optionId in model.VariantSpecificationOptionIds)
-                {
-                    var vso = new VariantSpecificationOption
+                    var updatedItem = await GetCartItemDTO(existingItem.CartItemId);
+                    return Ok(new
                     {
-                        VariantId = model.VariantId,
-                        OptionId = optionId,
-                        CreatedAt = DateTime.UtcNow
-                    };
-                    _context.VariantSpecificationOptions.Add(vso);
+                        message = $"Cart item quantity updated successfully. Capped at available stock ({variant.Stock ?? 0}).",
+                        data = updatedItem
+                    });
                 }
 
-                await _context.SaveChangesAsync();
-
-                var newItem = await GetCartItemDTO(cartItem.CartItemId);
-                return Ok(new
+                // New cart item
+                if (finalQuantity > 0)
                 {
-                    message = $"Item added to cart successfully. Quantity capped at stock ({variant.Stock ?? 0}).",
-                    data = newItem
-                });
+                    var cartItem = new CartItem
+                    {
+                        CartId = model.CartId,
+                        VariantId = model.VariantId,
+                        VariantSpecificationOptionsId = model.VariantSpecificationOptionsId,
+                        Quantity = finalQuantity,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    _context.CartItems.Add(cartItem);
+                    await _context.SaveChangesAsync();
+
+                    var newItem = await GetCartItemDTO(cartItem.CartItemId);
+                    return Ok(new
+                    {
+                        message = $"Item added to cart successfully. Quantity capped at available stock ({variant.Stock ?? 0}).",
+                        data = newItem
+                    });
+                }
+
+                return BadRequest(new { message = "Cannot add zero quantity." });
             }
             catch (Exception ex)
             {
@@ -83,15 +100,16 @@ namespace Backend_Api.Controllers
             try
             {
                 var items = await _context.CartItems
-                    .Include(ci => ci.Cart)
-                    .Include(ci => ci.Variant)
-                        .ThenInclude(v => v.Product)
-                            .ThenInclude(p => p.ProductImages)
-                    .Include(ci => ci.Variant.VariantSpecificationOptions)
-                        .ThenInclude(vso => vso.Option)
+                    .Select(ci => ci.CartItemId)
                     .ToListAsync();
 
-                var itemsDto = items.Select(ci => MapCartItemDTO(ci)).ToList();
+                var itemsDto = new List<CartItemDTO>();
+                foreach (var id in items)
+                {
+                    var dto = await GetCartItemDTO(id);
+                    if (dto != null) itemsDto.Add(dto);
+                }
+
                 return Ok(itemsDto);
             }
             catch (Exception ex)
@@ -107,7 +125,8 @@ namespace Backend_Api.Controllers
             try
             {
                 var item = await GetCartItemDTO(id);
-                if (item == null) return NotFound(new { message = "Cart item not found." });
+                if (item == null)
+                    return NotFound(new { message = "Cart item not found." });
 
                 return Ok(item);
             }
@@ -124,18 +143,19 @@ namespace Backend_Api.Controllers
             try
             {
                 var items = await _context.CartItems
-                    .Include(ci => ci.Cart)
-                    .Include(ci => ci.Variant)
-                        .ThenInclude(v => v.Product)
-                            .ThenInclude(p => p.ProductImages)
-                    .Include(ci => ci.Variant.VariantSpecificationOptions)
-                        .ThenInclude(vso => vso.Option)
                     .Where(ci => ci.CartId == cartId)
+                    .Select(ci => ci.CartItemId)
                     .ToListAsync();
 
-                var itemsDto = items.Select(ci => MapCartItemDTO(ci)).ToList();
+                var itemsDto = new List<CartItemDTO>();
+                foreach (var id in items)
+                {
+                    var dto = await GetCartItemDTO(id);
+                    if (dto != null) itemsDto.Add(dto);
+                }
+
                 var subtotal = itemsDto.Sum(i => i.TotalPrice);
-                var totalItems = itemsDto.Sum(i => i.Quantity ?? 0);
+                var totalItems = itemsDto.Sum(i => i.Quantity);
 
                 return Ok(new { message = "Cart fetched successfully.", subtotal, totalItems, items = itemsDto });
             }
@@ -176,58 +196,43 @@ namespace Backend_Api.Controllers
                 if (model == null || model.Quantity <= 0)
                     return BadRequest(new { message = "Quantity must be greater than 0." });
 
-                var item = await _context.CartItems
-                    .Include(ci => ci.Variant)
-                    .FirstOrDefaultAsync(ci => ci.CartItemId == id);
+                var item = await _context.CartItems.FindAsync(id);
+                if (item == null)
+                    return NotFound(new { message = "Cart item not found." });
 
-                if (item == null) return NotFound(new { message = "Cart item not found." });
-
-                var variant = item.Variant;
+                var variant = await _context.ProductVariants.FindAsync(item.VariantId);
+                if (variant == null)
+                    return NotFound(new { message = "Product variant not found." });
 
                 int finalQuantity = model.Quantity;
+
+                // Stock validation
                 if (variant.Stock.HasValue && finalQuantity > variant.Stock.Value)
                     finalQuantity = variant.Stock.Value;
 
-                item.CartId = model.CartId;
+                // Only update quantity
                 item.Quantity = finalQuantity;
-
-                // Update specs
-                if (model.VariantSpecificationOptionIds != null && model.VariantSpecificationOptionIds.Any())
-                {
-                    // Remove old spec links for this variant that are not in the new list
-                    var oldSpecs = await _context.VariantSpecificationOptions
-                        .Where(vso => vso.VariantId == item.VariantId &&
-                                      !model.VariantSpecificationOptionIds.Contains(vso.OptionId))
-                        .ToListAsync();
-
-                    _context.VariantSpecificationOptions.RemoveRange(oldSpecs);
-
-                    // Add new spec options if not already exists
-                    foreach (var optionId in model.VariantSpecificationOptionIds)
-                    {
-                        bool exists = await _context.VariantSpecificationOptions
-                            .AnyAsync(vso => vso.VariantId == item.VariantId && vso.OptionId == optionId);
-
-                        if (!exists)
-                        {
-                            _context.VariantSpecificationOptions.Add(new VariantSpecificationOption
-                            {
-                                VariantId = item.VariantId,
-                                OptionId = optionId,
-                                CreatedAt = DateTime.UtcNow
-                            });
-                        }
-                    }
-                }
 
                 await _context.SaveChangesAsync();
 
-                var updatedItem = await GetCartItemDTO(item.CartItemId);
-                return Ok(new { message = $"Cart item updated successfully. Quantity capped at stock ({variant.Stock ?? 0}).", data = updatedItem });
+                return Ok(new
+                {
+                    message = $"Cart item updated successfully. Quantity capped at stock ({variant.Stock ?? 0}).",
+                    data = new
+                    {
+                        item.CartItemId,
+                        item.CartId,
+                        item.Quantity
+                    }
+                });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error updating cart item.", error = ex.Message });
+                return StatusCode(500, new
+                {
+                    message = "Error updating cart item.",
+                    error = ex.Message
+                });
             }
         }
 
@@ -238,7 +243,8 @@ namespace Backend_Api.Controllers
             try
             {
                 var item = await _context.CartItems.FindAsync(id);
-                if (item == null) return NotFound(new { message = "Cart item not found." });
+                if (item == null)
+                    return NotFound(new { message = "Cart item not found." });
 
                 _context.CartItems.Remove(item);
                 await _context.SaveChangesAsync();
@@ -257,8 +263,12 @@ namespace Backend_Api.Controllers
         {
             try
             {
-                var items = await _context.CartItems.Where(ci => ci.CartId == cartId).ToListAsync();
-                if (!items.Any()) return NotFound(new { message = "No items found in this cart." });
+                var items = await _context.CartItems
+                    .Where(ci => ci.CartId == cartId)
+                    .ToListAsync();
+
+                if (!items.Any())
+                    return NotFound(new { message = "No items found in this cart." });
 
                 _context.CartItems.RemoveRange(items);
                 await _context.SaveChangesAsync();
@@ -271,7 +281,7 @@ namespace Backend_Api.Controllers
             }
         }
 
-        // ================= PRIVATE HELPERS =================
+        // ================= PRIVATE HELPER: FETCH CART ITEM DTO =================
         private async Task<CartItemDTO?> GetCartItemDTO(int cartItemId)
         {
             var item = await _context.CartItems
@@ -279,46 +289,49 @@ namespace Backend_Api.Controllers
                 .Include(ci => ci.Variant)
                     .ThenInclude(v => v.Product)
                         .ThenInclude(p => p.ProductImages)
-                .Include(ci => ci.Variant.VariantSpecificationOptions)
-                    .ThenInclude(vso => vso.Option)
+                .Include(ci => ci.VariantSpecificationOptions)
+                    .ThenInclude(vso => vso.Specification)
                 .FirstOrDefaultAsync(ci => ci.CartItemId == cartItemId);
 
             if (item == null) return null;
-            return MapCartItemDTO(item);
-        }
 
-        private CartItemDTO MapCartItemDTO(CartItem ci)
-        {
-            var specs = new Dictionary<string, string?>();
+            // Map specs
+            string? selectedColor = null;
+            string? ram = null;
+            string? storage = null;
 
-            foreach (var vso in ci.Variant.VariantSpecificationOptions)
-            {
-                if (vso.Option != null && !string.IsNullOrEmpty(vso.Option.OptionValue))
-                {
-                    var specName = vso.Option.Specification?.SpecificationName ?? "Option";
-                    specs[specName] = vso.Option.OptionValue;
-                }
-            }
+            var specOption = item.VariantSpecificationOptions;
+            if (specOption.Specification.SpecificationName == "Color")
+                selectedColor = specOption.OptionValue;
+            else if (specOption.Specification.SpecificationName == "RAM")
+                ram = specOption.OptionValue;
+            else if (specOption.Specification.SpecificationName == "Storage")
+                storage = specOption.OptionValue;
 
             return new CartItemDTO
             {
-                CartItemId = ci.CartItemId,
-                CartId = ci.CartId,
-                VariantId = ci.VariantId,
-                Quantity = ci.Quantity,
-                UserId = ci.Cart.UserId,
-                ProductName = ci.Variant.Product.ProductName,
-                Image = ci.Variant.Product.ProductImages
+                CartItemId = item.CartItemId,
+                CartId = item.CartId,
+                VariantId = item.VariantId,
+                VariantSpecificationOptionsId = item.VariantSpecificationOptionsId,
+                Quantity = item.Quantity ?? 0,
+                UserId = item.Cart.UserId,
+                Price = item.Variant.Price ?? 0,
+                TotalPrice = GetFinalPrice(item.Variant, item.Quantity ?? 0),
+                ProductName = item.Variant.Product.ProductName,
+                Image = item.Variant.Product.ProductImages
                             .OrderByDescending(pi => pi.IsCover ?? false)
                             .Select(pi => pi.ImageUrl)
                             .FirstOrDefault(),
-                Price = ci.Variant.Price ?? 0,
-                TotalPrice = GetFinalPrice(ci.Variant, ci.Quantity ?? 0),
-                CreatedAt = ci.CreatedAt,
-                Specs = specs
+                SelectedColor = selectedColor,
+                RAM = ram,
+                Storage = storage,
+                CreatedAt = item.CreatedAt
             };
         }
 
+
+        // ================= PRIVATE HELPER: FINAL PRICE CALCULATOR =================
         private static decimal GetFinalPrice(ProductVariant v, int quantity)
         {
             decimal price = v.Price ?? 0;
