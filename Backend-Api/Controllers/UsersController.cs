@@ -4,11 +4,13 @@ using Backend_Api.Models;
 using Backend_Api.Models.Model_Create;
 using Backend_Api.Models.Model_DTO;
 using Backend_Api.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Http;
 using System;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace Backend_Api.Controllers
@@ -141,46 +143,62 @@ public async Task<IActionResult> Signup([FromBody] Signup dto)
     }
 }
 
-        [HttpPut("update-profile/{id}")]
-        public async Task<IActionResult> UpdateProfile(int id, [FromForm] UpdateFullProfileDto dto)
+        [Authorize]
+        [HttpPut("update-profile/{id:int}")]
+        public async Task<IActionResult> UpdateProfile(
+    int id,
+    [FromForm] UpdateFullProfileDto dto
+)
         {
             try
             {
-                // 1️⃣ Get logged-in user from JWT
-                int loggedInUserId = int.Parse(User.FindFirst("UserId")?.Value ?? "0");
-                if (loggedInUserId == 0)
-                    return Unauthorized(new { message = "User not found." });
+                // 1️⃣ Get logged-in user from JWT (FIXED)
+                int loggedInUserId = int.Parse(
+                    User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "0"
+                );
 
-                // 🔒 Security check: user can update only their own profile
+                if (loggedInUserId == 0)
+                    return Unauthorized(new { message = "Invalid token." });
+
+                // 🔒 User can update ONLY their own profile
                 if (loggedInUserId != id)
                     return Forbid("You are not allowed to update another user's profile.");
 
-                var user = await _context.Users.FirstOrDefaultAsync(u => u.UserId == id);
+                // 2️⃣ Load user + profile
+                var user = await _context.Users
+                    .FirstOrDefaultAsync(u => u.UserId == id);
+
                 if (user == null)
                     return NotFound(new { message = "User not found." });
 
-                var profile = await _context.UserProfiles.FirstOrDefaultAsync(p => p.UserId == id);
+                var profile = await _context.UserProfiles
+                    .FirstOrDefaultAsync(p => p.UserId == id);
+
                 if (profile == null)
                     return NotFound(new { message = "User profile not found." });
 
-                // 2️⃣ Update user fields
-                if (!string.IsNullOrEmpty(dto.FirstName))
+                // 3️⃣ Update User fields
+                if (!string.IsNullOrWhiteSpace(dto.FirstName))
                     user.FirstName = dto.FirstName;
 
-                if (!string.IsNullOrEmpty(dto.LastName))
+                if (!string.IsNullOrWhiteSpace(dto.LastName))
                     user.LastName = dto.LastName;
 
-                if (!string.IsNullOrEmpty(dto.PhoneNumber))
+                if (!string.IsNullOrWhiteSpace(dto.PhoneNumber))
                     user.PhoneNumber = dto.PhoneNumber;
 
-                if (!string.IsNullOrEmpty(dto.Email) && dto.Email != user.Email)
+                if (!string.IsNullOrWhiteSpace(dto.Email) && dto.Email != user.Email)
                 {
                     user.Email = dto.Email;
                     user.IsEmailVerified = false;
 
                     // Invalidate old OTPs
                     var oldOtps = await _context.UserVerifications
-                        .Where(v => v.UserId == id && v.Channel == "email" && !(v.IsUsed ?? false))
+                        .Where(v =>
+                            v.UserId == id &&
+                            v.Channel == "email" &&
+                            !(v.IsUsed ?? false)
+                        )
                         .ToListAsync();
 
                     foreach (var o in oldOtps)
@@ -205,8 +223,8 @@ public async Task<IActionResult> Signup([FromBody] Signup dto)
                     );
                 }
 
-                // 3️⃣ Update profile fields
-                if (!string.IsNullOrEmpty(dto.Bio))
+                // 4️⃣ Update Profile fields
+                if (!string.IsNullOrWhiteSpace(dto.Bio))
                     profile.Bio = dto.Bio;
 
                 if (dto.ProfileImage != null && dto.ProfileImage.Length > 0)
@@ -222,8 +240,10 @@ public async Task<IActionResult> Signup([FromBody] Signup dto)
                     var imageName = Guid.NewGuid() + ext;
                     var filePath = Path.Combine(uploadPath, imageName);
 
-                    using var stream = System.IO.File.Create(filePath);
-                    await dto.ProfileImage.CopyToAsync(stream);
+                    using (var stream = System.IO.File.Create(filePath))
+                    {
+                        await dto.ProfileImage.CopyToAsync(stream);
+                    }
 
                     // Delete old image
                     if (!string.IsNullOrEmpty(profile.ProfileImage))
@@ -238,57 +258,13 @@ public async Task<IActionResult> Signup([FromBody] Signup dto)
 
                 profile.UpdatedAt = DateTime.UtcNow;
 
-                // 4️⃣ Address update / create
-                if (dto.CityId.HasValue && !string.IsNullOrWhiteSpace(dto.AddressLine1))
-                {
-                    Address? address = null;
-
-                    // Update existing address
-                    if (dto.AddressId.HasValue)
-                    {
-                        address = await _context.Addresses
-                            .FirstOrDefaultAsync(a => a.AddressId == dto.AddressId && a.UserId == id);
-
-                        if (address == null)
-                            return NotFound(new { message = "Address not found." });
-                    }
-                    // Create new address
-                    else
-                    {
-                        address = new Address
-                        {
-                            UserId = id,
-                            CreatedAt = DateTime.UtcNow
-                        };
-                        _context.Addresses.Add(address);
-                    }
-
-                    // Default address logic
-                    if (dto.IsDefault.GetValueOrDefault())
-                    {
-                        var defaultAddresses = await _context.Addresses
-                            .Where(a => a.UserId == id && a.IsDefault == true && a.AddressId != address.AddressId)
-                            .ToListAsync();
-
-                        foreach (var addr in defaultAddresses)
-                            addr.IsDefault = false;
-                    }
-
-                    address.CityId = dto.CityId.Value;
-                    address.AddressLine1 = dto.AddressLine1;
-                    address.AddressLine2 = dto.AddressLine2;
-                    address.PostalCode = dto.PostalCode;
-                    address.IsDefault = dto.IsDefault.GetValueOrDefault();
-                    address.UpdatedAt = DateTime.UtcNow;
-                }
-
-                // 5️⃣ Save all changes
+                // 5️⃣ Save changes
                 await _context.SaveChangesAsync();
 
                 return Ok(new
                 {
-                    message = "Profile and address updated successfully.",
-                    user = new
+                    message = "Profile updated successfully.",
+                    data = new
                     {
                         user.UserId,
                         user.FirstName,

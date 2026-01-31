@@ -1,24 +1,7 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "D:\\Projects\\MyProjectBackend\\Backend-Api\\",
-  "Documents": [
-    {
-      "AbsoluteMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|d:\\projects\\myprojectbackend\\backend-api\\controllers\\ordercontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|solutionrelative:controllers\\ordercontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|d:\\projects\\myprojectbackend\\backend-api\\models\\shipment.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|solutionrelative:models\\shipment.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|d:\\projects\\myprojectbackend\\backend-api\\models\\orderaddress.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|solutionrelative:models\\orderaddress.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|d:\\projects\\myprojectbackend\\backend-api\\models\\model dto\\orderitemdto.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|solutionrelative:models\\model dto\\orderitemdto.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    }
-  ],
+  "Documents": [],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
@@ -26,60 +9,8 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 2,
+          "SelectedChildIndex": -1,
           "Children": [
-            {
-              "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "Shipment.cs",
-              "DocumentMoniker": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Models\\Shipment.cs",
-              "RelativeDocumentMoniker": "Models\\Shipment.cs",
-              "ToolTip": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Models\\Shipment.cs",
-              "RelativeToolTip": "Models\\Shipment.cs",
-              "ViewState": "AgIAAAEAAAAAAAAAAAAAABQAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-01-30T21:04:07.056Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 2,
-              "Title": "OrderAddress.cs",
-              "DocumentMoniker": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Models\\OrderAddress.cs",
-              "RelativeDocumentMoniker": "Models\\OrderAddress.cs",
-              "ToolTip": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Models\\OrderAddress.cs",
-              "RelativeToolTip": "Models\\OrderAddress.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABUAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-01-30T21:03:15.845Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 0,
-              "Title": "OrderController.cs",
-              "DocumentMoniker": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Controllers\\OrderController.cs",
-              "RelativeDocumentMoniker": "Controllers\\OrderController.cs",
-              "ToolTip": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Controllers\\OrderController.cs",
-              "RelativeToolTip": "Controllers\\OrderController.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABUAAAAJAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-01-30T20:32:20.691Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 3,
-              "Title": "OrderItemDTO.cs",
-              "DocumentMoniker": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Models\\Model DTO\\OrderItemDTO.cs",
-              "RelativeDocumentMoniker": "Models\\Model DTO\\OrderItemDTO.cs",
-              "ToolTip": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Models\\Model DTO\\OrderItemDTO.cs",
-              "RelativeToolTip": "Models\\Model DTO\\OrderItemDTO.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-01-30T20:07:51.812Z",
-              "EditorCaption": ""
-            },
             {
               "$type": "Bookmark",
               "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
