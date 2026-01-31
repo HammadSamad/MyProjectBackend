@@ -13,7 +13,7 @@ public partial class Order
 
     public int? PaymentMethodId { get; set; }
 
-    public string OrderStatus { get; set; } = "Pending";
+    public string OrderStatus { get; set; } = "pending";
 
     public DateTime? CreatedAt { get; set; }
 

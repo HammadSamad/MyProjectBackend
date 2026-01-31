@@ -4,7 +4,7 @@
     {
         public long OrderId { get; set; }
         public string? RecipientName { get; set; }
-        public string? FullAddress { get; set; }
+        public int AddressId { get; set; }
         public string? Phone { get; set; }
     }
 }

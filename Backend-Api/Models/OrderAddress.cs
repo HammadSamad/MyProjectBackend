@@ -11,11 +11,13 @@ public partial class OrderAddress
 
     public string? RecipientName { get; set; }
 
-    public string? FullAddress { get; set; }
+    public int AddressId { get; set; }
 
     public string? Phone { get; set; }
 
     public DateTime? CreatedAt { get; set; }
+
+    public virtual Address Address { get; set; } = null!;
 
     public virtual Order Order { get; set; } = null!;
 }
