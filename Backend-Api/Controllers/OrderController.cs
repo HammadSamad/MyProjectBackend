@@ -36,7 +36,7 @@ namespace Backend_Api.Controllers
                     UserId = model.UserId,
                     TotalAmount = model.TotalAmount,
                     PaymentMethodId = model.PaymentMethodId,
-                    OrderStatus = model.OrderStatus,
+                    OrderStatus = "Pending",
                     CreatedAt = DateTime.UtcNow
                 };
 
