@@ -7,6 +7,7 @@
         public int ItemsCount { get; set; }
         public string? DeliveryStatus { get; set; }
         public decimal? TotalAmount { get; set; }
+        public OrderAdressDTO? OrderAddress { get; set; }
         public List<OrderDetailsItemDTO> Items { get; set; } = new();
     }
 }
