@@ -343,73 +343,85 @@ namespace Backend_Api.Controllers
 
 
 
-        [HttpGet("details/{orderId}")]
-        public async Task<IActionResult> GetOrderDetails(long orderId)
+        [HttpGet("user/{userId}/orders")]
+        public async Task<IActionResult> GetOrdersByUserId(int userId)
         {
-            if (orderId <= 0)
-                return BadRequest(new { message = "Invalid order id." });
+            if (userId <= 0)
+                return BadRequest(new { message = "Invalid user id." });
 
-            var order = await _context.Orders
-                .Include(o => o.Shipment)
-                .FirstOrDefaultAsync(o => o.OrderId == orderId);
-
-            if (order == null)
-                return NotFound(new { message = "Order not found." });
-
-            var orderItems = await _context.OrderItems
-                .Where(oi => oi.OrderId == orderId)
-                .Include(oi => oi.Variant)
-                    .ThenInclude(v => v.Product)
-                        .ThenInclude(p => p.ProductImages)
+            // 1️⃣ Load all orders for this user with items, variants, products, images, and shipments
+            var orders = await _context.Orders
+                .Where(o => o.UserId == userId)
+                .Include(o => o.OrderItems)
+                    .ThenInclude(oi => oi.Variant)
+                        .ThenInclude(v => v.Product)
+                            .ThenInclude(p => p.ProductImages)
+                .Include(o => o.Shipments)
                 .ToListAsync();
 
-            var itemsDto = orderItems.Select(oi =>
+            if (orders == null || !orders.Any())
+                return NotFound(new { message = "No orders found for this user." });
+
+            // 2️⃣ Prepare DTOs for each order
+            var ordersDto = orders.Select(order =>
             {
-                var variant = oi.Variant;
-                var product = variant.Product;
-
-                var coverImage = product.ProductImages
-                    .FirstOrDefault(i => i.IsCover == true)?.ImageUrl ?? "";
-
-                var specs = _context.VariantSpecificationOptions
-                    .Where(vso => vso.VariantId == oi.VariantId &&
-                        (vso.Option.Specification.SpecificationName == "RAM" ||
-                         vso.Option.Specification.SpecificationName == "Storage" ||
-                         vso.Option.Specification.SpecificationName == "Color"))
-                    .Select(vso => new VariantSpecificationOptionDTO
-                    {
-                        OptionId = vso.OptionId,
-                        SpecificationName = vso.Option.Specification.SpecificationName,
-                        OptionValue = vso.Option.OptionValue
-                    })
-                    .ToList();
-
-                return new OrderDetailsItemDTO
+                // Order items
+                var itemsDto = order.OrderItems.Select(oi =>
                 {
-                    ProductId = product.ProductId,
-                    VariantId = oi.VariantId,
-                    VariantSpecificationOptionsId = oi.VariantSpecificationOptionsId,
-                    Quantity = oi.Quantity,
+                    var variant = oi.Variant;
+                    var product = variant.Product;
+
+                    var coverImage = product.ProductImages
+                        .FirstOrDefault(i => i.IsCover == true)?.ImageUrl ?? "";
+
+                    var specs = _context.VariantSpecificationOptions
+                        .Where(vso => vso.VariantId == oi.VariantId &&
+                            (vso.Option.Specification.SpecificationName == "RAM" ||
+                             vso.Option.Specification.SpecificationName == "Storage" ||
+                             vso.Option.Specification.SpecificationName == "Color"))
+                        .Select(vso => new VariantSpecificationOptionDTO
+                        {
+                            OptionId = vso.OptionId,
+                            SpecificationName = vso.Option.Specification.SpecificationName,
+                            OptionValue = vso.Option.OptionValue
+                        })
+                        .ToList();
+
+                    return new OrderDetailsItemDTO
+                    {
+                        ProductId = product.ProductId,
+                        VariantId = oi.VariantId,
+                        VariantSpecificationOptionsId = oi.VariantSpecificationOptionsId,
+                        Quantity = oi.Quantity,
+                        UserId = order.UserId,
+                        Price = oi.Price,
+                        ProductName = product.ProductName,
+                        Image = coverImage,
+                        VariantSpecifications = specs
+                    };
+                }).ToList();
+
+                // Latest shipment
+                var latestShipment = order.Shipments
+                    .OrderByDescending(s => s.CreatedAt)
+                    .FirstOrDefault();
+
+                // Order DTO
+                return new OrderDetailsDTO
+                {
+                    OrderId = order.OrderId,
                     UserId = order.UserId,
-                    Price = oi.Price,
-                    ProductName = product.ProductName,
-                    Image = coverImage,
-                    VariantSpecifications = specs
+                    ItemsCount = itemsDto.Sum(i => i.Quantity ?? 0),
+                    DeliveryStatus = latestShipment?.Status ?? "Pending",
+                    TotalAmount = order.TotalAmount,
+                    Items = itemsDto
                 };
             }).ToList();
 
-            var response = new OrderDetailsDTO
-            {
-                OrderId = order.OrderId,
-                UserId = order.UserId,
-                ItemsCount = itemsDto.Sum(i => i.Quantity ?? 0),
-                DeliveryStatus = order.Shipment?.Status ?? "Pending",
-                TotalAmount = order.TotalAmount,
-                Items = itemsDto
-            };
-
-            return Ok(response);
+            return Ok(ordersDto);
         }
+
+
 
 
 

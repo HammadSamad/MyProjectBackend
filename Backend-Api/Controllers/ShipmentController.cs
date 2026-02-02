@@ -11,7 +11,7 @@ namespace Backend_Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize]
+    // [Authorize]
     public class ShipmentController : ControllerBase
     {
         private readonly LaptopHarbourDbContext _context;
