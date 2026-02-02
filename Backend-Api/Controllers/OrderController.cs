@@ -34,7 +34,7 @@ namespace Backend_Api.Controllers
         }
 
         // ================= CREATE ORDER =================
-        [HttpPost("order")]
+        [HttpPost]
         public async Task<IActionResult> CreateOrder([FromBody] CreateOrder model)
         {
             if (model == null)
