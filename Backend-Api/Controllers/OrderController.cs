@@ -6,6 +6,7 @@ using Backend_Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace Backend_Api.Controllers
 {
@@ -24,18 +25,33 @@ namespace Backend_Api.Controllers
         }
 
         // ================= CREATE ORDER =================
-        [HttpPost]
+        // ================= HELPER =================
+        private bool TryGetUserId(out int userId)
+        {
+            userId = 0;
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            return !string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out userId);
+        }
+
+        // ================= CREATE ORDER =================
+        [HttpPost("order")]
         public async Task<IActionResult> CreateOrder([FromBody] CreateOrder model)
         {
-            if (model == null) return BadRequest(new { message = "Order data is required." });
-            if (model.UserId <= 0) return BadRequest(new { message = "Invalid User ID." });
-            if (model.TotalAmount <= 0) return BadRequest(new { message = "Total amount must be greater than zero." });
+            if (model == null)
+                return BadRequest(new { success = false, message = "Order data is required." });
+
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { success = false, message = "Invalid or missing JWT token." });
+
+            if (model.TotalAmount <= 0)
+                return BadRequest(new { success = false, message = "Total amount must be greater than zero." });
 
             try
             {
+                // Create order
                 var order = new Order
                 {
-                    UserId = model.UserId,
+                    UserId = userId,
                     TotalAmount = model.TotalAmount,
                     PaymentMethodId = model.PaymentMethodId,
                     OrderStatus = "Pending",
@@ -45,21 +61,21 @@ namespace Backend_Api.Controllers
                 _context.Orders.Add(order);
                 await _context.SaveChangesAsync();
 
-                // ---------------- User Recent Orders ----------------
+                // Add to UserRecentOrders
                 var existingRecent = await _context.UserRecentOrders
-                    .FirstOrDefaultAsync(u => u.UserId == model.UserId && u.OrderId == order.OrderId);
+                    .FirstOrDefaultAsync(u => u.UserId == userId && u.OrderId == order.OrderId);
 
                 if (existingRecent != null)
                     existingRecent.CreatedAt = DateTime.UtcNow;
                 else
                     _context.UserRecentOrders.Add(new UserRecentOrder
                     {
-                        UserId = model.UserId,
+                        UserId = userId,
                         OrderId = order.OrderId,
                         CreatedAt = DateTime.UtcNow
                     });
 
-                // ---------------- Notify Admin ----------------
+                // Notify Admins
                 var adminUsers = await _context.UserRoles
                     .Where(ur => ur.Role.RoleName == "Admin")
                     .Select(ur => ur.User)
@@ -72,7 +88,7 @@ namespace Backend_Api.Controllers
                     {
                         UserId = admin.UserId,
                         Title = "New Order Received",
-                        Message = $"Order #{order.OrderId} has been placed by user #{order.UserId}.",
+                        Message = $"Order #{order.OrderId} has been placed by user #{userId}.",
                         Type = "Order",
                         TargetAudience = "Admin",
                         IsRead = false,
@@ -80,10 +96,10 @@ namespace Backend_Api.Controllers
                     });
                 }
 
-                // ---------------- Notify User ----------------
+                // Notify User
                 _context.Notifications.Add(new Notification
                 {
-                    UserId = order.UserId,
+                    UserId = userId,
                     Title = "Order Placed Successfully",
                     Message = $"Your order #{order.OrderId} has been placed successfully.",
                     Type = "Order",
@@ -94,8 +110,8 @@ namespace Backend_Api.Controllers
 
                 await _context.SaveChangesAsync();
 
-                // ---------------- Send Email Immediately to User ----------------
-                await SendOrderEmailToUser(order.OrderId);
+                // Send order email asynchronously
+                _ = SendOrderEmailToUser(order.OrderId);
 
                 return Ok(new
                 {
@@ -104,15 +120,26 @@ namespace Backend_Api.Controllers
                     orderId = order.OrderId
                 });
             }
-            catch
+            catch (DbUpdateException dbEx)
             {
                 return StatusCode(500, new
                 {
                     success = false,
-                    message = "An error occurred while creating the order."
+                    message = "Database error occurred while creating the order.",
+                    details = dbEx.ToString()
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "An unexpected error occurred while creating the order.",
+                    details = ex.ToString()
                 });
             }
         }
+
 
         // ================= UPDATE ORDER STATUS =================
         [HttpPatch("status/{id}")]
