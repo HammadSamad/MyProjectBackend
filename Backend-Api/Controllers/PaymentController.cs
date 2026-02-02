@@ -39,53 +39,115 @@ namespace Backend_Api.Controllers
             if (model == null)
                 return BadRequest(new { success = false, message = "Invalid request payload." });
 
-            if (!TryGetUserId(out var userId))
-                return Unauthorized(new { success = false, message = "Invalid or missing JWT token." });
+            if (model.UserId <= 0)
+                return BadRequest(new { success = false, message = "Valid user ID is required." });
+
+            if (model.Amount <= 0)
+                return BadRequest(new { success = false, message = "Payment amount must be greater than zero." });
 
             try
             {
-                // Fetch the order
-                var order = await _context.Orders.FirstOrDefaultAsync(o => o.OrderId == model.OrderId);
+                var order = await _context.Orders
+                    .FirstOrDefaultAsync(o => o.OrderId == model.OrderId);
+
                 if (order == null)
                     return BadRequest(new { success = false, message = "Order does not exist." });
 
-                if (order.UserId != userId)
-                    return StatusCode(403, new { success = false, message = "You do not have access to this order." });
+                if (order.UserId != model.UserId)
+                    return StatusCode(403, new
+                    {
+                        success = false,
+                        message = "You do not have access to this order."
+                    });
 
-                // Check payment method
+                if (order.OrderStatus == "Paid")
+                    return BadRequest(new
+                    {
+                        success = false,
+                        message = "Order is already paid."
+                    });
+
                 var paymentMethodExists = await _context.PaymentMethods
                     .AnyAsync(pm => pm.PaymentMethodId == model.PaymentMethodId);
+
                 if (!paymentMethodExists)
                     return BadRequest(new { success = false, message = "Payment method does not exist." });
 
-                // Prevent duplicate
                 var duplicateExists = await _context.Payments
-                    .AnyAsync(p => p.OrderId == model.OrderId && p.PaymentMethodId == model.PaymentMethodId);
-                if (duplicateExists)
-                    return BadRequest(new { success = false, message = "A payment for this order with the selected method already exists." });
+                    .AnyAsync(p =>
+                        p.OrderId == model.OrderId &&
+                        p.PaymentMethodId == model.PaymentMethodId);
 
-                // Create payment
+                if (duplicateExists)
+                    return BadRequest(new
+                    {
+                        success = false,
+                        message = "A payment with this method already exists for this order."
+                    });
+
                 using var transaction = await _context.Database.BeginTransactionAsync();
 
+                // Create payment
                 var payment = new Payment
                 {
                     OrderId = order.OrderId,
-                    UserId = order.UserId,
+                    UserId = model.UserId,
                     PaymentMethodId = model.PaymentMethodId,
                     Amount = model.Amount,
-                    Status = "Pending",
+                    Status = "Completed",
                     CreatedAt = DateTime.UtcNow,
-                    TransactionReference = $"PAY-{DateTime.UtcNow:yyMMddHHmmss}-{Guid.NewGuid().ToString("N")[..6]}"
+                    TransactionReference =
+                        $"PAY-{DateTime.UtcNow:yyMMddHHmmss}-{Guid.NewGuid().ToString("N")[..6]}"
                 };
 
                 _context.Payments.Add(payment);
+
+                // Update order status
+                order.OrderStatus = "Paid";
+                order.UpdatedAt = DateTime.UtcNow;
+                _context.Orders.Update(order);
+
+                // 🔔 Notify User
+                _context.Notifications.Add(new Notification
+                {
+                    UserId = model.UserId,
+                    Title = "Payment Successful",
+                    Message = $"Your payment for Order #{order.OrderId} was successful.",
+                    Type = "Payment",
+                    TargetAudience = "User",
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                });
+
+                // 🔔 Notify Admins
+                var adminUsers = await _context.UserRoles
+                    .Where(ur => ur.Role.RoleName == "Admin")
+                    .Select(ur => ur.User)
+                    .Distinct()
+                    .ToListAsync();
+
+                foreach (var admin in adminUsers)
+                {
+                    _context.Notifications.Add(new Notification
+                    {
+                        UserId = admin.UserId,
+                        Title = "New Payment Received",
+                        Message =
+                            $"Payment received for Order #{order.OrderId}. Amount: {payment.Amount}.",
+                        Type = "Payment",
+                        TargetAudience = "Admin",
+                        IsRead = false,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
                 return Ok(new
                 {
                     success = true,
-                    message = "Payment created successfully.",
+                    message = "Payment successful. Order marked as Paid.",
                     paymentId = payment.PaymentId,
                     transactionReference = payment.TransactionReference
                 });
@@ -109,6 +171,7 @@ namespace Backend_Api.Controllers
                 });
             }
         }
+
 
 
         // ================= GET ALL =================
