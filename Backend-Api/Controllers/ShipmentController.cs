@@ -2,6 +2,7 @@
 using Backend_Api.Models;
 using Backend_Api.Models.Model_Create;
 using Backend_Api.Models.Model_DTO;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -10,6 +11,7 @@ namespace Backend_Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class ShipmentController : ControllerBase
     {
         private readonly LaptopHarbourDbContext _context;
@@ -27,6 +29,7 @@ namespace Backend_Api.Controllers
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
+                // 1️⃣ Validate Order
                 var order = await _context.Orders.FindAsync(model.OrderId);
                 if (order == null)
                     return NotFound(new { error = "Order not found." });
@@ -34,11 +37,19 @@ namespace Backend_Api.Controllers
                 if (order.OrderStatus == "Cancelled")
                     return BadRequest(new { error = "Cannot create shipment for a cancelled order." });
 
+                // 2️⃣ Generate Unique Tracking Number
+                string trackingNumber;
+                do
+                {
+                    trackingNumber = GenerateTrackingNumber();
+                } while (await _context.Shipments.AnyAsync(s => s.TrackingNumber == trackingNumber));
+
+                // 3️⃣ Create Shipment
                 var shipment = new Shipment
                 {
                     OrderId = model.OrderId,
                     CourierName = model.CourierName,
-                    TrackingNumber = model.TrackingNumber,
+                    TrackingNumber = trackingNumber,
                     ShippingCost = 0,
                     Status = "Pending",
                     CreatedAt = DateTime.UtcNow
@@ -48,10 +59,12 @@ namespace Backend_Api.Controllers
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
+                // 4️⃣ Return Response
                 return Ok(new
                 {
                     message = "Shipment created successfully",
-                    shipmentId = shipment.ShipmentId
+                    shipmentId = shipment.ShipmentId,
+                    trackingNumber = shipment.TrackingNumber
                 });
             }
             catch (Exception ex)
@@ -60,6 +73,18 @@ namespace Backend_Api.Controllers
                 return StatusCode(500, new { error = "Failed to create shipment.", details = ex.Message });
             }
         }
+
+        // ================= Helper Method =================
+        private string GenerateTrackingNumber()
+        {
+            // Format: SHP-yyMMddHHmmss-RND
+            string prefix = "SHP";
+            string timestamp = DateTime.UtcNow.ToString("yyMMddHHmmss");
+            string randomPart = Guid.NewGuid().ToString("N").Substring(0, 4).ToUpper();
+
+            return $"{prefix}-{timestamp}-{randomPart}";
+        }
+
 
         // ================= UPDATE =================
         // PUT: api/Shipment/5

@@ -9,9 +9,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Backend_Api.Controllers
 {
-    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class OrderController : ControllerBase
     {
         private readonly LaptopHarbourDbContext _context;
