@@ -25,9 +25,7 @@ public partial class Address
 
     public virtual City City { get; set; } = null!;
 
+    public virtual ICollection<OrderAddress> OrderAddresses { get; set; } = new List<OrderAddress>();
+
     public virtual User User { get; set; } = null!;
-
-    public ICollection<OrderAddress> OrderAddresses { get; set; }
-        = new List<OrderAddress>();
-
 }

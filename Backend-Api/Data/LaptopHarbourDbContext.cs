@@ -108,11 +108,7 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.AddressId).HasName("PK__tmp_ms_x__CAA247C83C30046B");
 
-            entity.ToTable("addresses");
-
-            entity.HasIndex(e => e.CityId, "IX_addresses_city_id");
-
-            entity.HasIndex(e => e.UserId, "IX_addresses_user_id");
+            entity.ToTable("addresses", tb => tb.HasTrigger("trg_UpdateUpdatedAt_Addresses"));
 
             entity.Property(e => e.AddressId).HasColumnName("address_id");
             entity.Property(e => e.AddressLine1)
@@ -147,7 +143,7 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.BrandId).HasName("PK__brands__5E5A8E2776EA7A2F");
 
-            entity.ToTable("brands");
+            entity.ToTable("brands", tb => tb.HasTrigger("trg_UpdateUpdatedAt_Brands"));
 
             entity.HasIndex(e => e.BrandName, "UQ__brands__0C0C3B58C58E067D").IsUnique();
 
@@ -165,9 +161,11 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.CartId).HasName("PK__carts__2EF52A2779F94932");
 
-            entity.ToTable("carts");
-
-            entity.HasIndex(e => e.UserId, "IX_carts_user_id");
+            entity.ToTable("carts", tb =>
+                {
+                    tb.HasTrigger("trg_CleanupCartItems");
+                    tb.HasTrigger("trg_UpdateUpdatedAt_Carts");
+                });
 
             entity.Property(e => e.CartId).HasColumnName("cart_id");
             entity.Property(e => e.CreatedAt)
@@ -184,15 +182,9 @@ public partial class LaptopHarbourDbContext : DbContext
 
         modelBuilder.Entity<CartItem>(entity =>
         {
-            entity.HasKey(e => e.CartItemId).HasName("PK__cart_ite__5D9A6C6E621F248A");
+            entity.HasKey(e => e.CartItemId).HasName("PK__tmp_ms_x__5D9A6C6EA4C28666");
 
             entity.ToTable("cart_items");
-
-            entity.HasIndex(e => e.CartId, "IX_cart_items_cart_id");
-
-            entity.HasIndex(e => e.VariantId, "IX_cart_items_variant_id");
-
-            entity.HasIndex(e => e.VariantSpecificationOptionsId, "IX_cart_items_variant_spec_option_id");
 
             entity.Property(e => e.CartItemId).HasColumnName("cart_item_id");
             entity.Property(e => e.CartId).HasColumnName("cart_id");
@@ -206,26 +198,24 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Cart).WithMany(p => p.CartItems)
                 .HasForeignKey(d => d.CartId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__cart_item__cart___1BC821DD");
+                .HasConstraintName("FK__cart_item__cart___3B95D2F1");
 
             entity.HasOne(d => d.Variant).WithMany(p => p.CartItems)
                 .HasForeignKey(d => d.VariantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__cart_item__varia__184C96B4");
+                .HasConstraintName("FK__cart_item__varia__3AA1AEB8");
 
             entity.HasOne(d => d.VariantSpecificationOptions).WithMany(p => p.CartItems)
                 .HasForeignKey(d => d.VariantSpecificationOptionsId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK_cart_items_variant_spec_option");
+                .HasConstraintName("FK__cart_item__varia__3C89F72A");
         });
 
         modelBuilder.Entity<Category>(entity =>
         {
             entity.HasKey(e => e.CategoryId).HasName("PK__categori__D54EE9B4B54EA5AF");
 
-            entity.ToTable("categories");
-
-            entity.HasIndex(e => e.ParentCategoryId, "IX_categories_parent_category_id");
+            entity.ToTable("categories", tb => tb.HasTrigger("trg_UpdateUpdatedAt_Categories"));
 
             entity.Property(e => e.CategoryId).HasColumnName("category_id");
             entity.Property(e => e.CategoryImage)
@@ -251,8 +241,6 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.ToTable("cities");
 
-            entity.HasIndex(e => e.CountryId, "IX_cities_country_id");
-
             entity.Property(e => e.CityId).HasColumnName("city_id");
             entity.Property(e => e.CityName)
                 .HasMaxLength(100)
@@ -275,11 +263,11 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.ComplaintId).HasName("PK__tmp_ms_x__A771F61C9F9898B7");
 
-            entity.ToTable("complaints");
-
-            entity.HasIndex(e => e.OrderId, "IX_complaints_order_id");
-
-            entity.HasIndex(e => e.UserId, "IX_complaints_user_id");
+            entity.ToTable("complaints", tb =>
+                {
+                    tb.HasTrigger("trg_ComplaintStatus_Notify");
+                    tb.HasTrigger("trg_UpdateUpdatedAt_Complaints");
+                });
 
             entity.Property(e => e.ComplaintId).HasColumnName("complaint_id");
             entity.Property(e => e.CreatedAt)
@@ -321,8 +309,6 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.ToTable("complaint_messages");
 
-            entity.HasIndex(e => e.ComplaintId, "IX_complaint_messages_complaint_id");
-
             entity.Property(e => e.MessageId).HasColumnName("message_id");
             entity.Property(e => e.ComplaintId).HasColumnName("complaint_id");
             entity.Property(e => e.CreatedAt)
@@ -350,9 +336,7 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.ToTable("countries");
 
-            entity.HasIndex(e => e.CountryName, "UQ__countrie__F7018894A77368E0")
-                .IsUnique()
-                .HasFilter("([country_name] IS NOT NULL)");
+            entity.HasIndex(e => e.CountryName, "UQ__countrie__F7018894A77368E0").IsUnique();
 
             entity.Property(e => e.CountryId).HasColumnName("country_id");
             entity.Property(e => e.CountryName)
@@ -392,8 +376,6 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.ToTable("notifications");
 
-            entity.HasIndex(e => e.UserId, "IX_notifications_user_id");
-
             entity.Property(e => e.NotificationId).HasColumnName("notification_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
@@ -425,11 +407,13 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.OrderId).HasName("PK__orders__46596229DF36D567");
 
-            entity.ToTable("orders", tb => tb.HasTrigger("trg_ClearCart_AfterOrder"));
-
-            entity.HasIndex(e => e.PaymentMethodId, "IX_orders_payment_method_id");
-
-            entity.HasIndex(e => e.UserId, "IX_orders_user_id");
+            entity.ToTable("orders", tb =>
+                {
+                    tb.HasTrigger("trg_AutoCancel_UnpaidOrders");
+                    tb.HasTrigger("trg_ClearCartItems_AfterOrder");
+                    tb.HasTrigger("trg_OrderStatusChange_Notify");
+                    tb.HasTrigger("trg_UpdateUpdatedAt_Orders");
+                });
 
             entity.Property(e => e.OrderId).HasColumnName("order_id");
             entity.Property(e => e.CreatedAt)
@@ -458,11 +442,9 @@ public partial class LaptopHarbourDbContext : DbContext
 
         modelBuilder.Entity<OrderAddress>(entity =>
         {
-            entity.HasKey(e => e.OrderAddressId).HasName("PK__tmp_ms_x__9A9DCB57081B27D7");
+            entity.HasKey(e => e.OrderAddressId).HasName("PK__tmp_ms_x__9A9DCB571D7D71EB");
 
             entity.ToTable("order_addresses");
-
-            entity.HasIndex(e => e.OrderId, "IX_order_addresses_order_id");
 
             entity.Property(e => e.OrderAddressId).HasColumnName("order_address_id");
             entity.Property(e => e.AddressId).HasColumnName("address_id");
@@ -480,25 +462,19 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Address).WithMany(p => p.OrderAddresses)
                 .HasForeignKey(d => d.AddressId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__order_add__addre__7E8CC4B1");
+                .HasConstraintName("FK__order_add__addre__61BB7BD9");
 
             entity.HasOne(d => d.Order).WithMany(p => p.OrderAddresses)
                 .HasForeignKey(d => d.OrderId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__order_add__order__1975C517");
+                .HasConstraintName("FK__order_add__order__60C757A0");
         });
 
         modelBuilder.Entity<OrderItem>(entity =>
         {
-            entity.HasKey(e => e.OrderItemId).HasName("PK__order_it__3764B6BC30F2AEFE");
+            entity.HasKey(e => e.OrderItemId).HasName("PK__tmp_ms_x__3764B6BCA5A9F060");
 
-            entity.ToTable("order_items");
-
-            entity.HasIndex(e => e.OrderId, "IX_order_items_order_id");
-
-            entity.HasIndex(e => e.VariantId, "IX_order_items_variant_id");
-
-            entity.HasIndex(e => e.VariantSpecificationOptionsId, "IX_order_items_variant_spec_option_id");
+            entity.ToTable("order_items", tb => tb.HasTrigger("trg_DecreaseStock_OnOrder"));
 
             entity.Property(e => e.OrderItemId).HasColumnName("order_item_id");
             entity.Property(e => e.CreatedAt)
@@ -515,17 +491,17 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Order).WithMany(p => p.OrderItems)
                 .HasForeignKey(d => d.OrderId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__order_ite__order__32AB8735");
+                .HasConstraintName("FK__order_ite__order__4EA8A765");
 
             entity.HasOne(d => d.Variant).WithMany(p => p.OrderItems)
                 .HasForeignKey(d => d.VariantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__order_ite__varia__1A34DF26");
+                .HasConstraintName("FK__order_ite__varia__4DB4832C");
 
             entity.HasOne(d => d.VariantSpecificationOptions).WithMany(p => p.OrderItems)
                 .HasForeignKey(d => d.VariantSpecificationOptionsId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__order_ite__varia_spec_opt");
+                .HasConstraintName("FK__order_ite__varia__4F9CCB9E");
         });
 
         modelBuilder.Entity<PasswordResetToken>(entity =>
@@ -533,8 +509,6 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasKey(e => e.ResetId).HasName("PK__password__40FB0520C78E9B55");
 
             entity.ToTable("password_reset_tokens");
-
-            entity.HasIndex(e => e.UserId, "IX_password_reset_tokens_user_id");
 
             entity.Property(e => e.ResetId).HasColumnName("reset_id");
             entity.Property(e => e.CreatedAt)
@@ -560,12 +534,6 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasKey(e => e.PaymentId).HasName("PK__payments__ED1FC9EAA85823D7");
 
             entity.ToTable("payments");
-
-            entity.HasIndex(e => e.OrderId, "IX_payments_order_id");
-
-            entity.HasIndex(e => e.PaymentMethodId, "IX_payments_payment_method_id");
-
-            entity.HasIndex(e => e.UserId, "IX_payments_user_id");
 
             entity.Property(e => e.PaymentId).HasColumnName("payment_id");
             entity.Property(e => e.Amount)
@@ -643,11 +611,7 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.ProductId).HasName("PK__products__47027DF549946710");
 
-            entity.ToTable("products");
-
-            entity.HasIndex(e => e.BrandId, "IX_products_brand_id");
-
-            entity.HasIndex(e => e.CategoryId, "IX_products_category_id");
+            entity.ToTable("products", tb => tb.HasTrigger("trg_UpdateUpdatedAt_Products"));
 
             entity.Property(e => e.ProductId).HasColumnName("product_id");
             entity.Property(e => e.BrandId).HasColumnName("brand_id");
@@ -682,8 +646,6 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.ToTable("product_images");
 
-            entity.HasIndex(e => e.ProductId, "IX_product_images_product_id");
-
             entity.Property(e => e.ImageId).HasColumnName("image_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
@@ -706,11 +668,7 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.ReviewId).HasName("PK__product___60883D90EEC32F2F");
 
-            entity.ToTable("product_reviews");
-
-            entity.HasIndex(e => e.ProductId, "IX_product_reviews_product_id");
-
-            entity.HasIndex(e => e.UserId, "IX_product_reviews_user_id");
+            entity.ToTable("product_reviews", tb => tb.HasTrigger("trg_UpdateUpdatedAt_ProductReviews"));
 
             entity.Property(e => e.ReviewId).HasColumnName("review_id");
             entity.Property(e => e.CreatedAt)
@@ -742,10 +700,6 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasKey(e => new { e.ProductId, e.SpecificationId }).HasName("PK__product___C1DE3736383223F6");
 
             entity.ToTable("product_specification_values");
-
-            entity.HasIndex(e => e.OptionId, "IX_product_specification_values_option_id");
-
-            entity.HasIndex(e => e.SpecificationId, "IX_product_specification_values_specification_id");
 
             entity.Property(e => e.ProductId).HasColumnName("product_id");
             entity.Property(e => e.SpecificationId).HasColumnName("specification_id");
@@ -780,17 +734,16 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.VariantId).HasName("PK__tmp_ms_x__EACC68B7FFF3CDF1");
 
-            entity.ToTable("product_variants");
+            entity.ToTable("product_variants", tb =>
+                {
+                    tb.HasTrigger("trg_LogVariantPriceChange");
+                    tb.HasTrigger("trg_LowStock_Notify");
+                    tb.HasTrigger("trg_UpdateUpdatedAt_ProductVariants");
+                });
 
-            entity.HasIndex(e => e.ProductId, "IX_product_variants_product_id");
+            entity.HasIndex(e => e.Sku, "UQ__tmp_ms_x__DDDF4BE71FE219C8").IsUnique();
 
-            entity.HasIndex(e => e.Sku, "UQ__tmp_ms_x__DDDF4BE71FE219C8")
-                .IsUnique()
-                .HasFilter("([sku] IS NOT NULL)");
-
-            entity.HasIndex(e => e.Sku, "UQ__tmp_ms_x__DDDF4BE7F114AB11")
-                .IsUnique()
-                .HasFilter("([sku] IS NOT NULL)");
+            entity.HasIndex(e => e.Sku, "UQ__tmp_ms_x__DDDF4BE7F114AB11").IsUnique();
 
             entity.Property(e => e.VariantId).HasColumnName("variant_id");
             entity.Property(e => e.CreatedAt)
@@ -824,11 +777,7 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.ViewId).HasName("PK__product___B5A34EE238C8872E");
 
-            entity.ToTable("product_views");
-
-            entity.HasIndex(e => e.ProductId, "IX_product_views_product_id");
-
-            entity.HasIndex(e => e.UserId, "IX_product_views_user_id");
+            entity.ToTable("product_views", tb => tb.HasTrigger("trg_CleanupOldProductViews"));
 
             entity.Property(e => e.ViewId).HasColumnName("view_id");
             entity.Property(e => e.ProductId).HasColumnName("product_id");
@@ -851,8 +800,6 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.RefreshTokenId).HasName("PK__RefreshT__F5845E395EF5989C");
 
-            entity.HasIndex(e => e.UserId, "IX_RefreshTokens_user_id");
-
             entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())");
             entity.Property(e => e.Token).HasMaxLength(500);
             entity.Property(e => e.UserId).HasColumnName("user_id");
@@ -867,11 +814,7 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.RefundId).HasName("PK__refunds__897E9EA3DA435AAD");
 
-            entity.ToTable("refunds");
-
-            entity.HasIndex(e => e.PaymentId, "IX_refunds_payment_id");
-
-            entity.HasIndex(e => e.ReturnId, "IX_refunds_return_id");
+            entity.ToTable("refunds", tb => tb.HasTrigger("trg_RefundProcessed_Notify"));
 
             entity.Property(e => e.RefundId).HasColumnName("refund_id");
             entity.Property(e => e.Amount)
@@ -904,11 +847,11 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.ReturnId).HasName("PK__returns__35C234730CD511CF");
 
-            entity.ToTable("returns");
-
-            entity.HasIndex(e => e.OrderId, "IX_returns_order_id");
-
-            entity.HasIndex(e => e.UserId, "IX_returns_user_id");
+            entity.ToTable("returns", tb =>
+                {
+                    tb.HasTrigger("trg_IncreaseStock_OnReturn");
+                    tb.HasTrigger("trg_ReturnStatus_Notify");
+                });
 
             entity.Property(e => e.ReturnId).HasColumnName("return_id");
             entity.Property(e => e.CreatedAt)
@@ -937,7 +880,15 @@ public partial class LaptopHarbourDbContext : DbContext
 
         modelBuilder.Entity<ReviewImage>(entity =>
         {
-            entity.HasIndex(e => e.ReviewId, "IX_ReviewImages_ReviewId");
+            entity.HasKey(e => e.ReviewImageId).HasName("PK__review_i__9523BBD5E2B01877");
+
+            entity.ToTable("review_images");
+
+            entity.Property(e => e.ReviewImageId).HasColumnName("reviewImage_id");
+            entity.Property(e => e.ImageUrl)
+                .HasMaxLength(500)
+                .HasColumnName("imageUrl");
+            entity.Property(e => e.ReviewId).HasColumnName("review_id");
 
             entity.HasOne(d => d.Review).WithMany(p => p.ReviewImages)
                 .HasForeignKey(d => d.ReviewId)
@@ -968,8 +919,6 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.ToTable("role_permissions");
 
-            entity.HasIndex(e => e.PermissionId, "IX_role_permissions_permission_id");
-
             entity.Property(e => e.RoleId).HasColumnName("role_id");
             entity.Property(e => e.PermissionId).HasColumnName("permission_id");
             entity.Property(e => e.CreatedAt)
@@ -993,8 +942,6 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.ToTable("search_history");
 
-            entity.HasIndex(e => e.UserId, "IX_search_history_user_id");
-
             entity.Property(e => e.SearchId).HasColumnName("search_id");
             entity.Property(e => e.SearchText)
                 .HasMaxLength(255)
@@ -1013,9 +960,7 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.ShipmentId).HasName("PK__tmp_ms_x__41466E59A956F909");
 
-            entity.ToTable("shipments");
-
-            entity.HasIndex(e => e.OrderId, "IX_shipments_order_id");
+            entity.ToTable("shipments", tb => tb.HasTrigger("trg_ShipmentStatus_Notify"));
 
             entity.Property(e => e.ShipmentId).HasColumnName("shipment_id");
             entity.Property(e => e.CourierName)
@@ -1072,8 +1017,6 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.ToTable("specification_options");
 
-            entity.HasIndex(e => e.SpecificationId, "IX_specification_options_specification_id");
-
             entity.Property(e => e.OptionId).HasColumnName("option_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
@@ -1093,7 +1036,7 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.UserId).HasName("PK__tmp_ms_x__B9BE370FC419F2E1");
 
-            entity.ToTable("users");
+            entity.ToTable("users", tb => tb.HasTrigger("trg_UpdateUpdatedAt_Users"));
 
             entity.HasIndex(e => e.Email, "UQ__tmp_ms_x__AB6E61643A120AD1").IsUnique();
 
@@ -1133,7 +1076,7 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.ProfileId).HasName("PK__user_pro__AEBB701FBDBEDC89");
 
-            entity.ToTable("user_profiles");
+            entity.ToTable("user_profiles", tb => tb.HasTrigger("trg_UpdateUpdatedAt_UserProfiles"));
 
             entity.HasIndex(e => e.UserId, "UQ__user_pro__B9BE370E2BB74815").IsUnique();
 
@@ -1164,10 +1107,6 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.ToTable("user_recent_orders");
 
-            entity.HasIndex(e => e.OrderId, "IX_user_recent_orders_order_id");
-
-            entity.HasIndex(e => e.UserId, "IX_user_recent_orders_user_id");
-
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
@@ -1192,8 +1131,6 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.ToTable("user_roles");
 
-            entity.HasIndex(e => e.RoleId, "IX_user_roles_role_id");
-
             entity.Property(e => e.UserId).HasColumnName("user_id");
             entity.Property(e => e.RoleId).HasColumnName("role_id");
             entity.Property(e => e.CreatedAt)
@@ -1216,8 +1153,6 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasKey(e => e.VerificationId).HasName("PK__user_ver__24F17969C715D1FD");
 
             entity.ToTable("user_verifications");
-
-            entity.HasIndex(e => e.UserId, "IX_user_verifications_user_id");
 
             entity.Property(e => e.VerificationId).HasColumnName("verification_id");
             entity.Property(e => e.Channel)
@@ -1247,8 +1182,6 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.ToTable("variant_price_history");
 
-            entity.HasIndex(e => e.VariantId, "IX_variant_price_history_variant_id");
-
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
@@ -1273,8 +1206,6 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.ToTable("variant_specification_options");
 
-            entity.HasIndex(e => e.OptionId, "IX_variant_specification_options_option_id");
-
             entity.Property(e => e.VariantId).HasColumnName("variant_id");
             entity.Property(e => e.OptionId).HasColumnName("option_id");
             entity.Property(e => e.CreatedAt)
@@ -1296,11 +1227,9 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.WishlistId).HasName("PK__wishlist__6151514EEABA9E73");
 
-            entity.ToTable("wishlists");
+            entity.ToTable("wishlists", tb => tb.HasTrigger("trg_CleanupWishlistItems"));
 
-            entity.HasIndex(e => e.UserId, "UQ__wishlist__B9BE370E7AA893E5")
-                .IsUnique()
-                .HasFilter("([user_id] IS NOT NULL)");
+            entity.HasIndex(e => e.UserId, "UQ__wishlist__B9BE370E7AA893E5").IsUnique();
 
             entity.Property(e => e.WishlistId).HasColumnName("wishlist_id");
             entity.Property(e => e.CreatedAt)
@@ -1318,10 +1247,6 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasKey(e => e.WishlistItemId).HasName("PK__wishlist__190EBE283CA47503");
 
             entity.ToTable("wishlist_items");
-
-            entity.HasIndex(e => e.VariantId, "IX_wishlist_items_variant_id");
-
-            entity.HasIndex(e => e.WishlistId, "IX_wishlist_items_wishlist_id");
 
             entity.Property(e => e.WishlistItemId).HasColumnName("wishlist_item_id");
             entity.Property(e => e.CreatedAt)
