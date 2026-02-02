@@ -36,18 +36,20 @@ namespace Backend_Api.Controllers
         [HttpPost]
         public async Task<IActionResult> CreatePayment([FromBody] CreatePayment model)
         {
+            if (model == null)
+                return BadRequest(new { error = "Invalid request payload." });
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                if (model == null)
-                    return BadRequest(new { error = "Invalid request payload." });
-
                 var order = await _context.Orders
-                    .Include(o => o.User)
                     .FirstOrDefaultAsync(o => o.OrderId == model.OrderId);
 
                 if (order == null)
                     return BadRequest(new { error = "Order does not exist." });
+
+                if (order.UserId <= 0)
+                    return BadRequest(new { error = "Invalid user for this order." });
 
                 var paymentMethodExists = await _context.PaymentMethods
                     .AnyAsync(pm => pm.PaymentMethodId == model.PaymentMethodId);
@@ -222,10 +224,8 @@ namespace Backend_Api.Controllers
                 if (!TryGetUserId(out var userId))
                     return Unauthorized();
 
-                var isAdmin = User.IsInRole("Admin");
-
                 var payments = await _context.Payments
-                    .Where(p => isAdmin || p.UserId == userId)
+                    .Where(p => p.UserId == userId)
                     .Select(p => new PaymentDTO
                     {
                         PaymentId = p.PaymentId,
@@ -246,7 +246,6 @@ namespace Backend_Api.Controllers
                 return StatusCode(500, new { error = "Failed to fetch payments.", details = ex.Message });
             }
         }
-
 
         // ================= UPDATE =================
         [HttpPut("{id}")]
@@ -312,25 +311,30 @@ namespace Backend_Api.Controllers
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
+                // Email (null-safe)
                 try
                 {
-                    var to = payment.Order.User.Email;
-                    var subject = "Payment Confirmation - Laptop Harbour";
-                    var body = $@"
-                        <h2>Payment Successful</h2>
-                        <p>Dear {payment.Order.User.Username},</p>
-                        <p>Your payment has been successfully received.</p>
-                        <hr/>
-                        <p><strong>Order ID:</strong> {payment.OrderId}</p>
-                        <p><strong>Payment ID:</strong> {payment.PaymentId}</p>
-                        <p><strong>Transaction Reference:</strong> {payment.TransactionReference}</p>
-                        <p><strong>Amount:</strong> {payment.Amount:C}</p>
-                        <p><strong>Status:</strong> Paid</p>
-                        <p><strong>Date:</strong> {payment.PaidAt:yyyy-MM-dd HH:mm}</p>
-                        <hr/>
-                        <p>Thank you for shopping with <b>Laptop Harbour</b>.</p>
-                    ";
-                    await _emailService.SendEmailAsync(to, subject, body);
+                    var emailUser = payment.Order?.User;
+                    if (!string.IsNullOrEmpty(emailUser?.Email))
+                    {
+                        var to = emailUser.Email;
+                        var subject = "Payment Confirmation - Laptop Harbour";
+                        var body = $@"
+                            <h2>Payment Successful</h2>
+                            <p>Dear {emailUser.Username},</p>
+                            <p>Your payment has been successfully received.</p>
+                            <hr/>
+                            <p><strong>Order ID:</strong> {payment.OrderId}</p>
+                            <p><strong>Payment ID:</strong> {payment.PaymentId}</p>
+                            <p><strong>Transaction Reference:</strong> {payment.TransactionReference}</p>
+                            <p><strong>Amount:</strong> {payment.Amount:C}</p>
+                            <p><strong>Status:</strong> Paid</p>
+                            <p><strong>Date:</strong> {payment.PaidAt:yyyy-MM-dd HH:mm}</p>
+                            <hr/>
+                            <p>Thank you for shopping with <b>Laptop Harbour</b>.</p>
+                        ";
+                        await _emailService.SendEmailAsync(to, subject, body);
+                    }
                 }
                 catch { /* ignore email errors */ }
 
