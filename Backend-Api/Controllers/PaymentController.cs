@@ -33,35 +33,39 @@ namespace Backend_Api.Controllers
         }
 
         // ================= CREATE =================
-        [HttpPost]
+        [HttpPost("payment")]
         public async Task<IActionResult> CreatePayment([FromBody] CreatePayment model)
         {
             if (model == null)
-                return BadRequest(new { error = "Invalid request payload." });
+                return BadRequest(new { success = false, message = "Invalid request payload." });
 
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            if (!TryGetUserId(out var userId))
+                return Unauthorized(new { success = false, message = "Invalid or missing JWT token." });
+
             try
             {
-                var order = await _context.Orders
-                    .FirstOrDefaultAsync(o => o.OrderId == model.OrderId);
-
+                // Fetch the order
+                var order = await _context.Orders.FirstOrDefaultAsync(o => o.OrderId == model.OrderId);
                 if (order == null)
-                    return BadRequest(new { error = "Order does not exist." });
+                    return BadRequest(new { success = false, message = "Order does not exist." });
 
-                if (order.UserId <= 0)
-                    return BadRequest(new { error = "Invalid user for this order." });
+                if (order.UserId != userId)
+                    return StatusCode(403, new { success = false, message = "You do not have access to this order." });
 
+                // Check payment method
                 var paymentMethodExists = await _context.PaymentMethods
                     .AnyAsync(pm => pm.PaymentMethodId == model.PaymentMethodId);
-
                 if (!paymentMethodExists)
-                    return BadRequest(new { error = "Payment method does not exist." });
+                    return BadRequest(new { success = false, message = "Payment method does not exist." });
 
+                // Prevent duplicate
                 var duplicateExists = await _context.Payments
                     .AnyAsync(p => p.OrderId == model.OrderId && p.PaymentMethodId == model.PaymentMethodId);
-
                 if (duplicateExists)
-                    return BadRequest(new { error = "A payment for this order with the selected payment method already exists." });
+                    return BadRequest(new { success = false, message = "A payment for this order with the selected method already exists." });
+
+                // Create payment
+                using var transaction = await _context.Database.BeginTransactionAsync();
 
                 var payment = new Payment
                 {
@@ -71,7 +75,7 @@ namespace Backend_Api.Controllers
                     Amount = model.Amount,
                     Status = "Pending",
                     CreatedAt = DateTime.UtcNow,
-                    TransactionReference = $"PAY-{DateTime.UtcNow:yyMMddHHmmss}-{Guid.NewGuid().ToString("N").Substring(0, 4)}"
+                    TransactionReference = $"PAY-{DateTime.UtcNow:yyMMddHHmmss}-{Guid.NewGuid().ToString("N")[..6]}"
                 };
 
                 _context.Payments.Add(payment);
@@ -80,22 +84,32 @@ namespace Backend_Api.Controllers
 
                 return Ok(new
                 {
-                    message = "Payment created successfully",
+                    success = true,
+                    message = "Payment created successfully.",
                     paymentId = payment.PaymentId,
                     transactionReference = payment.TransactionReference
                 });
             }
-            catch (Exception ex)
+            catch (DbUpdateException dbEx)
             {
-                await transaction.RollbackAsync();
                 return StatusCode(500, new
                 {
-                    error = "Failed to create payment.",
-                    details = ex.Message,
-                    inner = ex.InnerException?.Message
+                    success = false,
+                    message = "Database error occurred while creating payment.",
+                    details = dbEx.ToString()
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    success = false,
+                    message = "Failed to create payment due to an unexpected error.",
+                    details = ex.ToString()
                 });
             }
         }
+
 
         // ================= GET ALL =================
         [HttpGet]
