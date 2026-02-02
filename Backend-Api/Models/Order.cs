@@ -15,6 +15,8 @@ public partial class Order
 
     public string OrderStatus { get; set; } = null!;
 
+    public Shipment? Shipment { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }

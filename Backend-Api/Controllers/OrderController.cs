@@ -3,11 +3,13 @@ using Backend_Api.Models;
 using Backend_Api.Models.Model_Create;
 using Backend_Api.Models.Model_DTO;
 using Backend_Api.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend_Api.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class OrderController : ControllerBase
@@ -308,5 +310,78 @@ namespace Backend_Api.Controllers
 
             return Ok(new { message = "Order deleted successfully." });
         }
+
+
+        
+        [HttpGet("details/{orderId}")]
+        public async Task<IActionResult> GetOrderDetails(long orderId)
+        {
+            if (orderId <= 0)
+                return BadRequest(new { message = "Invalid order id." });
+
+            var order = await _context.Orders
+                .Include(o => o.Shipment)
+                .FirstOrDefaultAsync(o => o.OrderId == orderId);
+
+            if (order == null)
+                return NotFound(new { message = "Order not found." });
+
+            var orderItems = await _context.OrderItems
+                .Where(oi => oi.OrderId == orderId)
+                .Include(oi => oi.Variant)
+                    .ThenInclude(v => v.Product)
+                        .ThenInclude(p => p.ProductImages)
+                .ToListAsync();
+
+            var itemsDto = orderItems.Select(oi =>
+            {
+                var variant = oi.Variant;
+                var product = variant.Product;
+
+                var coverImage = product.ProductImages
+                    .FirstOrDefault(i => i.IsCover == true)?.ImageUrl ?? "";
+
+                var specs = _context.VariantSpecificationOptions
+                    .Where(vso => vso.VariantId == oi.VariantId &&
+                        (vso.Option.Specification.SpecificationName == "RAM" ||
+                         vso.Option.Specification.SpecificationName == "Storage" ||
+                         vso.Option.Specification.SpecificationName == "Color"))
+                    .Select(vso => new VariantSpecificationOptionDTO
+                    {
+                        OptionId = vso.OptionId,
+                        SpecificationName = vso.Option.Specification.SpecificationName,
+                        OptionValue = vso.Option.OptionValue
+                    })
+                    .ToList();
+
+                return new OrderDetailsItemDTO
+                {
+                    ProductId = product.ProductId,
+                    VariantId = oi.VariantId,
+                    VariantSpecificationOptionsId = oi.VariantSpecificationOptionsId,
+                    Quantity = oi.Quantity,
+                    UserId = order.UserId,
+                    Price = oi.Price,
+                    ProductName = product.ProductName,
+                    Image = coverImage,
+                    VariantSpecifications = specs
+                };
+            }).ToList();
+
+            var response = new OrderDetailsDTO
+            {
+                OrderId = order.OrderId,
+                UserId = order.UserId,
+                ItemsCount = itemsDto.Sum(i => i.Quantity ?? 0),
+                DeliveryStatus = order.Shipment?.Status ?? "Pending",
+                TotalAmount = order.TotalAmount,
+                Items = itemsDto
+            };
+
+            return Ok(response);
+        }
+
+
+
     }
 }
