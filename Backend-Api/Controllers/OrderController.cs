@@ -26,12 +26,12 @@ namespace Backend_Api.Controllers
 
         // ================= CREATE ORDER =================
         // ================= HELPER =================
-        private bool TryGetUserId(out int userId)
-        {
-            userId = 0;
-            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            return !string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out userId);
-        }
+        //private bool TryGetUserId(out int userId)
+        //{
+        //    userId = 0;
+        //    var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        //    return !string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out userId);
+        //}
 
         // ================= CREATE ORDER =================
         [HttpPost]
@@ -40,14 +40,16 @@ namespace Backend_Api.Controllers
             if (model == null)
                 return BadRequest(new { success = false, message = "Order data is required." });
 
-            if (!TryGetUserId(out var userId))
-                return Unauthorized(new { success = false, message = "Invalid or missing JWT token." });
-
             if (model.TotalAmount <= 0)
                 return BadRequest(new { success = false, message = "Total amount must be greater than zero." });
 
             try
             {
+                // Use the UserId from the model since JWT is removed
+                var userId = model.UserId;
+                if (userId <= 0)
+                    return BadRequest(new { success = false, message = "Valid user ID is required." });
+
                 // Create order
                 var order = new Order
                 {
@@ -139,6 +141,7 @@ namespace Backend_Api.Controllers
                 });
             }
         }
+
 
 
         // ================= UPDATE ORDER STATUS =================
