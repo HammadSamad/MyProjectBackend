@@ -1,5 +1,6 @@
 wwwroot\upload\Products\19ab3c60-955b-4035-9b15-ce5b2b19dc90.webp
 wwwroot\upload\Products\21a7fea9-dee3-4f43-82a1-fddab8744061.webp
 wwwroot\upload\Products\2849a234-5eb8-4446-90a4-0fc459fe6a25.webp
+wwwroot\upload\Products\8688e5eb-5836-412e-b346-20469af70435.webp
 wwwroot\upload\Products\c0ba36b3-92cd-492c-92f9-4418d1b2384b.webp
 wwwroot\upload\Products\dd630388-39a5-4873-aa18-201c0ec4dc8f.webp

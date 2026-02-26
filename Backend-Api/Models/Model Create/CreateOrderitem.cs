@@ -3,9 +3,9 @@
     public class CreateOrderitem
     {
         public long OrderId { get; set; }
+        public int CartItemId { get; set; }
         public int VariantId { get; set; }
         public int? Quantity { get; set; }
-        public decimal? Price { get; set; }
         public int VariantSpecificationOptionsId { get; set; }
     }
 }

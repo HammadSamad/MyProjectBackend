@@ -12,7 +12,7 @@ namespace Backend_Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    //[Authorize]
+    [Authorize]  // Enable JWT authentication for all endpoints
     public class OrderController : ControllerBase
     {
         private readonly LaptopHarbourDbContext _context;
@@ -24,14 +24,33 @@ namespace Backend_Api.Controllers
             _emailService = emailService;
         }
 
-        // ================= CREATE ORDER =================
         // ================= HELPER =================
-        //private bool TryGetUserId(out int userId)
-        //{
-        //    userId = 0;
-        //    var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        //    return !string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out userId);
-        //}
+        private bool TryGetUserId(out int userId)
+        {
+            userId = 0;
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            return !string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out userId);
+        }
+
+        private int GetUserIdFromToken()
+        {
+            if (!TryGetUserId(out int userId))
+            {
+                throw new UnauthorizedAccessException("User ID not found in token.");
+            }
+            return userId;
+        }
+
+        private string GetUserRole()
+        {
+            var role = User.FindFirstValue(ClaimTypes.Role);
+            return role ?? "User";  // Default to "User" if no role found
+        }
+
+        private bool IsAdmin()
+        {
+            return GetUserRole().Equals("Admin", StringComparison.OrdinalIgnoreCase);
+        }
 
         // ================= CREATE ORDER =================
         [HttpPost]
@@ -45,12 +64,14 @@ namespace Backend_Api.Controllers
 
             try
             {
-                // Use the UserId from the model since JWT is removed
-                var userId = model.UserId;
-                if (userId <= 0)
-                    return BadRequest(new { success = false, message = "Valid user ID is required." });
+                var userId = GetUserIdFromToken();
 
-                // Create order
+                // Admin creating order for another user
+                if (IsAdmin() && model.UserId > 0)
+                {
+                    userId = model.UserId;
+                }
+
                 var order = new Order
                 {
                     UserId = userId,
@@ -122,13 +143,17 @@ namespace Backend_Api.Controllers
                     orderId = order.OrderId
                 });
             }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { success = false, message = ex.Message });
+            }
             catch (DbUpdateException dbEx)
             {
                 return StatusCode(500, new
                 {
                     success = false,
                     message = "Database error occurred while creating the order.",
-                    details = dbEx.ToString()
+                    details = dbEx.InnerException?.Message
                 });
             }
             catch (Exception ex)
@@ -137,15 +162,14 @@ namespace Backend_Api.Controllers
                 {
                     success = false,
                     message = "An unexpected error occurred while creating the order.",
-                    details = ex.ToString()
+                    details = ex.Message
                 });
             }
         }
 
-
-
         // ================= UPDATE ORDER STATUS =================
         [HttpPatch("status/{id}")]
+        [Authorize(Roles = "Admin,Staff")]
         public async Task<IActionResult> UpdateOrderStatus(long id, [FromBody] string status)
         {
             if (id <= 0) return BadRequest(new { message = "Invalid order ID." });
@@ -163,7 +187,7 @@ namespace Backend_Api.Controllers
                 order.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
 
-                // ---------------- Notify User on Every Status Update ----------------
+                // Notify User
                 _context.Notifications.Add(new Notification
                 {
                     UserId = order.UserId,
@@ -175,10 +199,9 @@ namespace Backend_Api.Controllers
                     CreatedAt = DateTime.UtcNow
                 });
 
-                // ---------------- If Order is Cancelled ----------------
+                // If cancelled, notify admins and send email
                 if (status.ToLower() == "cancelled" || status.ToLower() == "canceled")
                 {
-                    // Notify Admin
                     var adminUsers = await _context.UserRoles
                         .Where(ur => ur.Role.RoleName == "Admin")
                         .Select(ur => ur.User)
@@ -191,7 +214,7 @@ namespace Backend_Api.Controllers
                         {
                             UserId = admin.UserId,
                             Title = "Order Cancelled",
-                            Message = $"Order #{order.OrderId} has been cancelled by user #{order.UserId}.",
+                            Message = $"Order #{order.OrderId} has been cancelled.",
                             Type = "OrderCancel",
                             TargetAudience = "Admin",
                             IsRead = false,
@@ -199,7 +222,6 @@ namespace Backend_Api.Controllers
                         });
                     }
 
-                    // Send Cancel Email to User
                     await SendOrderCancelEmailToUser(order.OrderId);
                 }
 
@@ -267,6 +289,7 @@ namespace Backend_Api.Controllers
 
         // ================= GET ALL ORDERS =================
         [HttpGet]
+        [Authorize(Roles = "Admin,Staff")]
         public async Task<IActionResult> GetAllOrders()
         {
             var orders = await _context.Orders
@@ -289,26 +312,42 @@ namespace Backend_Api.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetOrderById(long id)
         {
-            var order = await _context.Orders
-                .Where(o => o.OrderId == id)
-                .Select(o => new OrderDTO
-                {
-                    OrderId = o.OrderId,
-                    UserId = o.UserId,
-                    TotalAmount = o.TotalAmount,
-                    PaymentMethodId = o.PaymentMethodId,
-                    OrderStatus = o.OrderStatus,
-                    CreatedAt = o.CreatedAt,
-                    UpdatedAt = o.UpdatedAt
-                })
-                .FirstOrDefaultAsync();
+            try
+            {
+                var userId = GetUserIdFromToken();
+                var userRole = GetUserRole();
 
-            if (order == null) return NotFound();
-            return Ok(order);
+                var order = await _context.Orders
+                    .Where(o => o.OrderId == id)
+                    .Select(o => new OrderDTO
+                    {
+                        OrderId = o.OrderId,
+                        UserId = o.UserId,
+                        TotalAmount = o.TotalAmount,
+                        PaymentMethodId = o.PaymentMethodId,
+                        OrderStatus = o.OrderStatus,
+                        CreatedAt = o.CreatedAt,
+                        UpdatedAt = o.UpdatedAt
+                    })
+                    .FirstOrDefaultAsync();
+
+                if (order == null)
+                    return NotFound(new { message = "Order not found." });
+
+                if (!IsAdmin() && userRole != "Staff" && order.UserId != userId)
+                    return Forbid();
+
+                return Ok(order);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
         }
 
         // ================= GET ORDERS BY USER =================
         [HttpGet("user/{userId}")]
+        [Authorize(Roles = "Admin,Staff")]
         public async Task<IActionResult> GetOrdersByUser(int userId)
         {
             var orders = await _context.Orders
@@ -328,8 +367,39 @@ namespace Backend_Api.Controllers
             return Ok(orders);
         }
 
+        // ================= GET MY ORDERS =================
+        [HttpGet("my-orders")]
+        public async Task<IActionResult> GetMyOrders()
+        {
+            try
+            {
+                var userId = GetUserIdFromToken();
+
+                var orders = await _context.Orders
+                    .Where(o => o.UserId == userId)
+                    .Select(o => new OrderDTO
+                    {
+                        OrderId = o.OrderId,
+                        UserId = o.UserId,
+                        TotalAmount = o.TotalAmount,
+                        PaymentMethodId = o.PaymentMethodId,
+                        OrderStatus = o.OrderStatus,
+                        CreatedAt = o.CreatedAt,
+                        UpdatedAt = o.UpdatedAt
+                    })
+                    .ToListAsync();
+
+                return Ok(orders);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+        }
+
         // ================= DELETE ORDER =================
         [HttpDelete("{id}")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> DeleteOrder(long id)
         {
             var order = await _context.Orders.FindAsync(id);
@@ -341,17 +411,14 @@ namespace Backend_Api.Controllers
             return Ok(new { message = "Order deleted successfully." });
         }
 
-
-
-        [HttpGet("user/{userId}/orders")]
-        public async Task<IActionResult> GetOrdersByUserId(int userId)
+        // ================= GET MY ORDER DETAILS =================
+        [HttpGet("my-order-details")]
+        public async Task<IActionResult> GetMyOrderDetails()
         {
             try
             {
-                if (userId <= 0)
-                    return BadRequest(new { message = "Invalid user id." });
+                var userId = GetUserIdFromToken();
 
-                // 1️⃣ Load all orders for this user with items, variants, products, images, and shipments
                 var orders = await _context.Orders
                     .Where(o => o.UserId == userId)
                     .Include(o => o.OrderItems)
@@ -361,14 +428,13 @@ namespace Backend_Api.Controllers
                     .Include(o => o.Shipments)
                     .Include(o => o.OrderAddresses)
                         .ThenInclude(oa => oa.Address)
-                            .ThenInclude(a => a.City) // Include City navigation
+                            .ThenInclude(a => a.City)
                     .OrderByDescending(o => o.CreatedAt)
                     .ToListAsync();
 
                 if (orders == null || !orders.Any())
-                    return NotFound(new { message = "No orders found for this user." });
+                    return NotFound(new { message = "No orders found." });
 
-                // 2️⃣ Prepare DTOs for each order
                 var ordersDto = new List<OrderDetailsDTO>();
 
                 foreach (var order in orders)
@@ -379,13 +445,10 @@ namespace Backend_Api.Controllers
                     {
                         var variant = oi.Variant;
                         var product = variant?.Product;
-
                         if (product == null) continue;
 
-                        var coverImage = product.ProductImages
-                            .FirstOrDefault(i => i.IsCover == true)?.ImageUrl ?? "";
+                        var coverImage = product.ProductImages.FirstOrDefault(i => i.IsCover == true)?.ImageUrl ?? "";
 
-                        // Load specifications for this variant
                         var specs = await _context.VariantSpecificationOptions
                             .Where(vso => vso.VariantId == oi.VariantId)
                             .Select(vso => new VariantSpecificationOptionDTO
@@ -410,7 +473,6 @@ namespace Backend_Api.Controllers
                         });
                     }
 
-                    // Get order address
                     var orderAddress = order.OrderAddresses.FirstOrDefault();
                     OrderAdressDTO? addressDto = null;
 
@@ -424,17 +486,121 @@ namespace Backend_Api.Controllers
                             AddressId = orderAddress.AddressId,
                             Phone = orderAddress.Phone,
                             AddressLine1 = orderAddress.Address.AddressLine1,
-                            // Map AddressLine2 to Label
                             Label = orderAddress.Address.AddressLine2,
                             CityName = orderAddress.Address.City?.CityName,
                             CreatedAt = orderAddress.CreatedAt
                         };
                     }
 
-                    // Latest shipment
-                    var latestShipment = order.Shipments
-                        .OrderByDescending(s => s.CreatedAt)
-                        .FirstOrDefault();
+                    var latestShipment = order.Shipments.OrderByDescending(s => s.CreatedAt).FirstOrDefault();
+
+                    ordersDto.Add(new OrderDetailsDTO
+                    {
+                        OrderId = order.OrderId,
+                        UserId = order.UserId,
+                        ItemsCount = itemsDto.Sum(i => i.Quantity ?? 0),
+                        DeliveryStatus = latestShipment?.Status ?? "Pending",
+                        TotalAmount = order.TotalAmount,
+                        Items = itemsDto,
+                        OrderAddress = addressDto
+                    });
+                }
+
+                return Ok(ordersDto);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch user orders.", details = ex.Message });
+            }
+        }
+
+        // ================= GET USER ORDER DETAILS BY USER ID =================
+        [HttpGet("user/{userId}/order-details")]
+        [Authorize(Roles = "Admin,Staff")]
+        public async Task<IActionResult> GetUserOrderDetails(int userId)
+        {
+            try
+            {
+                if (userId <= 0) return BadRequest(new { message = "Invalid user id." });
+
+                var orders = await _context.Orders
+                    .Where(o => o.UserId == userId)
+                    .Include(o => o.OrderItems)
+                        .ThenInclude(oi => oi.Variant)
+                            .ThenInclude(v => v.Product)
+                                .ThenInclude(p => p.ProductImages)
+                    .Include(o => o.Shipments)
+                    .Include(o => o.OrderAddresses)
+                        .ThenInclude(oa => oa.Address)
+                            .ThenInclude(a => a.City)
+                    .OrderByDescending(o => o.CreatedAt)
+                    .ToListAsync();
+
+                if (orders == null || !orders.Any())
+                    return NotFound(new { message = "No orders found for this user." });
+
+                var ordersDto = new List<OrderDetailsDTO>();
+
+                foreach (var order in orders)
+                {
+                    var itemsDto = new List<OrderDetailsItemDTO>();
+
+                    foreach (var oi in order.OrderItems)
+                    {
+                        var variant = oi.Variant;
+                        var product = variant?.Product;
+                        if (product == null) continue;
+
+                        var coverImage = product.ProductImages.FirstOrDefault(i => i.IsCover == true)?.ImageUrl ?? "";
+
+                        var specs = await _context.VariantSpecificationOptions
+                            .Where(vso => vso.VariantId == oi.VariantId)
+                            .Select(vso => new VariantSpecificationOptionDTO
+                            {
+                                OptionId = vso.OptionId,
+                                SpecificationName = vso.Option.Specification.SpecificationName,
+                                OptionValue = vso.Option.OptionValue
+                            })
+                            .ToListAsync();
+
+                        itemsDto.Add(new OrderDetailsItemDTO
+                        {
+                            ProductId = product.ProductId,
+                            VariantId = oi.VariantId,
+                            VariantSpecificationOptionsId = oi.VariantSpecificationOptionsId,
+                            Quantity = oi.Quantity,
+                            UserId = order.UserId,
+                            Price = oi.Price,
+                            ProductName = product.ProductName,
+                            Image = coverImage,
+                            VariantSpecifications = specs
+                        });
+                    }
+
+                    var orderAddress = order.OrderAddresses.FirstOrDefault();
+                    OrderAdressDTO? addressDto = null;
+
+                    if (orderAddress != null && orderAddress.Address != null)
+                    {
+                        addressDto = new OrderAdressDTO
+                        {
+                            OrderAddressId = orderAddress.OrderAddressId,
+                            OrderId = orderAddress.OrderId,
+                            RecipientName = orderAddress.RecipientName,
+                            AddressId = orderAddress.AddressId,
+                            Phone = orderAddress.Phone,
+                            AddressLine1 = orderAddress.Address.AddressLine1,
+                            Label = orderAddress.Address.AddressLine2,
+                            CityName = orderAddress.Address.City?.CityName,
+                            CreatedAt = orderAddress.CreatedAt
+                        };
+                    }
+
+                    var latestShipment = order.Shipments.OrderByDescending(s => s.CreatedAt).FirstOrDefault();
 
                     ordersDto.Add(new OrderDetailsDTO
                     {
@@ -452,14 +618,8 @@ namespace Backend_Api.Controllers
             }
             catch (Exception ex)
             {
-                // Log the exception here
                 return StatusCode(500, new { error = "Failed to fetch user orders.", details = ex.Message });
             }
         }
-
-
-
-
-
     }
 }

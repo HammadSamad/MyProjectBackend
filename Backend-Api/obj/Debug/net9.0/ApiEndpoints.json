@@ -1251,6 +1251,26 @@
   },
   {
     "ContainingType": "Backend_Api.Controllers.OrderController",
+    "Method": "GetMyOrderDetails",
+    "RelativePath": "api/Order/my-order-details",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Backend_Api.Controllers.OrderController",
+    "Method": "GetMyOrders",
+    "RelativePath": "api/Order/my-orders",
+    "HttpMethod": "GET",
+    "IsController": true,
+    "Order": 0,
+    "Parameters": [],
+    "ReturnTypes": []
+  },
+  {
+    "ContainingType": "Backend_Api.Controllers.OrderController",
     "Method": "UpdateOrderStatus",
     "RelativePath": "api/Order/status/{id}",
     "HttpMethod": "PATCH",
@@ -1288,8 +1308,8 @@
   },
   {
     "ContainingType": "Backend_Api.Controllers.OrderController",
-    "Method": "GetOrdersByUserId",
-    "RelativePath": "api/Order/user/{userId}/orders",
+    "Method": "GetUserOrderDetails",
+    "RelativePath": "api/Order/user/{userId}/order-details",
     "HttpMethod": "GET",
     "IsController": true,
     "Order": 0,

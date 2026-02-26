@@ -2,17 +2,16 @@
 using Backend_Api.Models;
 using Backend_Api.Models.Model_Create;
 using Backend_Api.Models.Model_DTO;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using System.Security.Claims;
 
 namespace Backend_Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize] // 🔐 JWT Enabled
     public class OrderItemController : ControllerBase
     {
         private readonly LaptopHarbourDbContext _context;
@@ -22,264 +21,291 @@ namespace Backend_Api.Controllers
             _context = context;
         }
 
+        // ================= HELPER: GET USERID =================
+        private bool TryGetUserId(out int userId)
+        {
+            userId = 0;
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            return !string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out userId);
+        }
+
         // ================= CREATE =================
         [HttpPost]
         public async Task<IActionResult> CreateOrderItem([FromBody] CreateOrderitem model)
         {
+            if (!TryGetUserId(out int userId))
+                return Unauthorized();
+
             if (model == null)
                 return BadRequest(new { message = "Request body cannot be empty." });
 
             if (model.Quantity <= 0)
                 return BadRequest(new { message = "Quantity must be greater than zero." });
 
-            try
+            var order = await _context.Orders.FirstOrDefaultAsync(o => o.OrderId == model.OrderId && o.UserId == userId);
+            if (order == null)
+                return BadRequest(new { message = "Order does not exist or access denied." });
+
+            var variant = await _context.ProductVariants
+                .Include(v => v.Product)
+                    .ThenInclude(p => p.ProductImages)
+                .FirstOrDefaultAsync(v => v.VariantId == model.VariantId);
+
+            if (variant == null)
+                return BadRequest(new { message = "Product Variant does not exist." });
+
+            decimal finalPrice = CalculateFinalPrice(variant);
+
+            var orderItem = new OrderItem
             {
-                var order = await _context.Orders.FirstOrDefaultAsync(o => o.OrderId == model.OrderId);
-                if (order == null)
-                    return BadRequest(new { message = "Order does not exist." });
+                OrderId = model.OrderId,
+                VariantId = model.VariantId,
+                Quantity = model.Quantity,
+                Price = finalPrice,
+                VariantSpecificationOptionsId = model.VariantSpecificationOptionsId,
+                CreatedAt = DateTime.UtcNow
+            };
 
-                var variant = await _context.ProductVariants
-                    .Include(v => v.Product)
-                        .ThenInclude(p => p.ProductImages)
-                    .FirstOrDefaultAsync(v => v.VariantId == model.VariantId);
+            _context.OrderItems.Add(orderItem);
 
-                if (variant == null)
-                    return BadRequest(new { message = "Product Variant does not exist." });
+            // Remove Cart Item if exists
+            var cartItem = await _context.CartItems.FirstOrDefaultAsync(ci => ci.CartItemId == model.CartItemId);
+            if (cartItem != null)
+                _context.CartItems.Remove(cartItem);
 
-                // Calculate final price automatically
-                decimal finalPrice = CalculateFinalPrice(variant);
+            // Update UserRecentOrder
+            var recentOrder = await _context.UserRecentOrders
+                .FirstOrDefaultAsync(r => r.UserId == userId && r.OrderId == order.OrderId);
 
-                var orderItem = new OrderItem
+            if (recentOrder != null)
+                recentOrder.CreatedAt = DateTime.UtcNow;
+            else
+                _context.UserRecentOrders.Add(new UserRecentOrder
                 {
-                    OrderId = model.OrderId,
-                    VariantId = model.VariantId,
-                    Quantity = model.Quantity,
-                    Price = finalPrice,
-                    VariantSpecificationOptionsId = model.VariantSpecificationOptionsId,
+                    UserId = userId,
+                    OrderId = order.OrderId,
                     CreatedAt = DateTime.UtcNow
-                };
-
-                _context.OrderItems.Add(orderItem);
-
-                // Update UserRecentOrder
-                var recentOrder = await _context.UserRecentOrders
-                    .FirstOrDefaultAsync(r => r.UserId == order.UserId && r.OrderId == order.OrderId);
-
-                if (recentOrder != null)
-                    recentOrder.CreatedAt = DateTime.UtcNow;
-                else
-                    _context.UserRecentOrders.Add(new UserRecentOrder
-                    {
-                        UserId = order.UserId,
-                        OrderId = order.OrderId,
-                        CreatedAt = DateTime.UtcNow
-                    });
-
-                await _context.SaveChangesAsync();
-
-                return Ok(new
-                {
-                    message = "Order item added successfully.",
-                    orderItemId = orderItem.OrderItemId
                 });
-            }
-            catch (DbUpdateException)
+
+            await _context.SaveChangesAsync();
+
+            return Ok(new
             {
-                return StatusCode(500, new { message = "Database error occurred while creating the order item." });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Unexpected error occurred.", details = ex.Message });
-            }
+                message = "Order item added successfully.",
+                orderItemId = orderItem.OrderItemId
+            });
         }
 
-        // ================= GET ALL =================
+        // ================= GET ALL (Optimized) =================
         [HttpGet]
         public async Task<ActionResult<IEnumerable<OrderItemDTO>>> GetAllOrderItems()
         {
-            try
-            {
-                var items = await _context.OrderItems
-                    .Include(oi => oi.Variant)
-                        .ThenInclude(v => v.Product)
-                            .ThenInclude(p => p.ProductImages)
-                    .ToListAsync();
+            if (!TryGetUserId(out int userId))
+                return Unauthorized();
 
-                if (!items.Any())
-                    return NotFound(new { message = "No order items found." });
+            var items = await _context.OrderItems
+                .Where(oi => oi.Order.UserId == userId)
+                .Include(oi => oi.Variant)
+                    .ThenInclude(v => v.Product)
+                        .ThenInclude(p => p.ProductImages)
+                .Include(oi => oi.Variant)
+                    .ThenInclude(v => v.VariantSpecificationOptions)
+                        .ThenInclude(vso => vso.Option)
+                            .ThenInclude(o => o.Specification)
+                .ToListAsync();
 
-                return Ok(items.Select(MapToDTO).ToList());
-            }
-            catch (Exception ex)
+            if (!items.Any())
+                return NotFound(new { message = "No order items found." });
+
+            var result = items.Select(oi =>
             {
-                return StatusCode(500, new { message = "Failed to fetch order items.", details = ex.Message });
-            }
+                var variant = oi.Variant;
+                var product = variant.Product;
+
+                string coverImage = product.ProductImages.FirstOrDefault(i => i.IsCover == true)?.ImageUrl ?? "";
+                decimal finalPrice = CalculateFinalPrice(variant);
+
+                var specs = variant.VariantSpecificationOptions
+                    .Where(vso => vso.Option.Specification.SpecificationName is "RAM" or "Storage" or "Color")
+                    .Select(vso => new VariantSpecificationOptionDTO
+                    {
+                        OptionId = vso.OptionId,
+                        SpecificationName = vso.Option.Specification.SpecificationName,
+                        OptionValue = vso.Option.OptionValue
+                    }).ToList();
+
+                return new OrderItemDTO
+                {
+                    OrderItemId = oi.OrderItemId,
+                    OrderId = oi.OrderId,
+                    VariantId = oi.VariantId,
+                    Quantity = oi.Quantity,
+                    Price = finalPrice,
+                    CreatedAt = oi.CreatedAt,
+                    ProductName = product.ProductName,
+                    Image = coverImage,
+                    VariantSpecifications = specs,
+                    VariantSpecificationOptionsId = oi.VariantSpecificationOptionsId
+                };
+            }).ToList();
+
+            return Ok(result);
         }
 
-        // ================= GET BY ID =================
-        [HttpGet("{id}")]
-        public async Task<ActionResult<OrderItemDTO>> GetOrderItemById(long id)
-        {
-            if (id <= 0)
-                return BadRequest(new { message = "Invalid order item ID." });
-
-            try
-            {
-                var item = await _context.OrderItems
-                    .Include(oi => oi.Variant)
-                        .ThenInclude(v => v.Product)
-                            .ThenInclude(p => p.ProductImages)
-                    .FirstOrDefaultAsync(oi => oi.OrderItemId == id);
-
-                if (item == null)
-                    return NotFound(new { message = "Order item not found." });
-
-                return Ok(MapToDTO(item));
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Failed to fetch order item.", details = ex.Message });
-            }
-        }
-
-        // ================= GET BY ORDER =================
+        // ================= GET BY ORDER (Optimized) =================
         [HttpGet("order/{orderId}")]
         public async Task<ActionResult<IEnumerable<OrderItemDTO>>> GetItemsByOrder(long orderId)
         {
-            if (orderId <= 0)
-                return BadRequest(new { message = "Invalid order ID." });
+            if (!TryGetUserId(out int userId))
+                return Unauthorized();
 
-            try
+            var items = await _context.OrderItems
+                .Where(oi => oi.OrderId == orderId && oi.Order.UserId == userId)
+                .Include(oi => oi.Variant)
+                    .ThenInclude(v => v.Product)
+                        .ThenInclude(p => p.ProductImages)
+                .Include(oi => oi.Variant)
+                    .ThenInclude(v => v.VariantSpecificationOptions)
+                        .ThenInclude(vso => vso.Option)
+                            .ThenInclude(o => o.Specification)
+                .ToListAsync();
+
+            if (!items.Any())
+                return NotFound(new { message = "No order items found for this order." });
+
+            var result = items.Select(oi =>
             {
-                var items = await _context.OrderItems
-                    .Where(oi => oi.OrderId == orderId)
-                    .Include(oi => oi.Variant)
-                        .ThenInclude(v => v.Product)
-                            .ThenInclude(p => p.ProductImages)
-                    .ToListAsync();
+                var variant = oi.Variant;
+                var product = variant.Product;
 
-                if (!items.Any())
-                    return NotFound(new { message = "No order items found for this order." });
+                string coverImage = product.ProductImages.FirstOrDefault(i => i.IsCover == true)?.ImageUrl ?? "";
+                decimal finalPrice = CalculateFinalPrice(variant);
 
-                return Ok(items.Select(MapToDTO).ToList());
-            }
-            catch (Exception ex)
+                var specs = variant.VariantSpecificationOptions
+                    .Where(vso => vso.Option.Specification.SpecificationName is "RAM" or "Storage" or "Color")
+                    .Select(vso => new VariantSpecificationOptionDTO
+                    {
+                        OptionId = vso.OptionId,
+                        SpecificationName = vso.Option.Specification.SpecificationName,
+                        OptionValue = vso.Option.OptionValue
+                    }).ToList();
+
+                return new OrderItemDTO
+                {
+                    OrderItemId = oi.OrderItemId,
+                    OrderId = oi.OrderId,
+                    VariantId = oi.VariantId,
+                    Quantity = oi.Quantity,
+                    Price = finalPrice,
+                    CreatedAt = oi.CreatedAt,
+                    ProductName = product.ProductName,
+                    Image = coverImage,
+                    VariantSpecifications = specs,
+                    VariantSpecificationOptionsId = oi.VariantSpecificationOptionsId
+                };
+            }).ToList();
+
+            return Ok(result);
+        }
+
+        // ================= GET BY ID =================
+        [HttpGet("{id}/details")]
+        public async Task<ActionResult<OrderItemDTO>> GetOrderItemById(long id)
+        {
+            if (!TryGetUserId(out int userId))
+                return Unauthorized();
+
+            var item = await _context.OrderItems
+                .Include(oi => oi.Variant)
+                    .ThenInclude(v => v.Product)
+                        .ThenInclude(p => p.ProductImages)
+                .Include(oi => oi.Variant)
+                    .ThenInclude(v => v.VariantSpecificationOptions)
+                        .ThenInclude(vso => vso.Option)
+                            .ThenInclude(o => o.Specification)
+                .FirstOrDefaultAsync(oi => oi.OrderItemId == id && oi.Order.UserId == userId);
+
+            if (item == null)
+                return NotFound(new { message = "Order item not found or access denied." });
+
+            var variant = item.Variant;
+            var product = variant.Product;
+
+            string coverImage = product.ProductImages.FirstOrDefault(i => i.IsCover == true)?.ImageUrl ?? "";
+            decimal finalPrice = CalculateFinalPrice(variant);
+
+            var specs = variant.VariantSpecificationOptions
+                .Where(vso => vso.Option.Specification.SpecificationName is "RAM" or "Storage" or "Color")
+                .Select(vso => new VariantSpecificationOptionDTO
+                {
+                    OptionId = vso.OptionId,
+                    SpecificationName = vso.Option.Specification.SpecificationName,
+                    OptionValue = vso.Option.OptionValue
+                }).ToList();
+
+            var dto = new OrderItemDTO
             {
-                return StatusCode(500, new { message = "Failed to fetch order items by order.", details = ex.Message });
-            }
+                OrderItemId = item.OrderItemId,
+                OrderId = item.OrderId,
+                VariantId = item.VariantId,
+                Quantity = item.Quantity,
+                Price = finalPrice,
+                CreatedAt = item.CreatedAt,
+                ProductName = product.ProductName,
+                Image = coverImage,
+                VariantSpecifications = specs,
+                VariantSpecificationOptionsId = item.VariantSpecificationOptionsId
+            };
+
+            return Ok(dto);
         }
 
         // ================= UPDATE =================
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateOrderItem(long id, [FromBody] CreateOrderitem model)
         {
-            if (id <= 0)
-                return BadRequest(new { message = "Invalid order item ID." });
+            if (!TryGetUserId(out int userId))
+                return Unauthorized();
 
-            if (model == null)
-                return BadRequest(new { message = "Request body cannot be empty." });
+            var orderItem = await _context.OrderItems
+                .Include(oi => oi.Order)
+                .FirstOrDefaultAsync(oi => oi.OrderItemId == id && oi.Order.UserId == userId);
 
-            if (model.Quantity <= 0)
-                return BadRequest(new { message = "Quantity must be greater than zero." });
+            if (orderItem == null)
+                return NotFound(new { message = "Order item not found or access denied." });
 
-            try
-            {
-                var orderItem = await _context.OrderItems.FindAsync(id);
-                if (orderItem == null)
-                    return NotFound(new { message = "Order item not found." });
+            var variant = await _context.ProductVariants.FirstOrDefaultAsync(v => v.VariantId == model.VariantId);
+            if (variant == null)
+                return BadRequest(new { message = "Product Variant does not exist." });
 
-                var variant = await _context.ProductVariants
-                    .Include(v => v.Product)
-                    .FirstOrDefaultAsync(v => v.VariantId == model.VariantId);
+            orderItem.VariantId = model.VariantId;
+            orderItem.Quantity = model.Quantity;
+            orderItem.VariantSpecificationOptionsId = model.VariantSpecificationOptionsId;
+            orderItem.Price = CalculateFinalPrice(variant);
 
-                if (variant == null)
-                    return BadRequest(new { message = "Product Variant does not exist." });
+            await _context.SaveChangesAsync();
 
-                orderItem.VariantId = model.VariantId;
-                orderItem.Quantity = model.Quantity;
-                orderItem.VariantSpecificationOptionsId = model.VariantSpecificationOptionsId;
-
-                // Automatically update price based on variant
-                orderItem.Price = CalculateFinalPrice(variant);
-
-                await _context.SaveChangesAsync();
-
-                return Ok(new { message = "Order item updated successfully." });
-            }
-            catch (DbUpdateException)
-            {
-                return StatusCode(500, new { message = "Database error occurred while updating the order item." });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Unexpected error occurred.", details = ex.Message });
-            }
+            return Ok(new { message = "Order item updated successfully." });
         }
 
         // ================= DELETE =================
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteOrderItem(long id)
         {
-            if (id <= 0)
-                return BadRequest(new { message = "Invalid order item ID." });
+            if (!TryGetUserId(out int userId))
+                return Unauthorized();
 
-            try
-            {
-                var orderItem = await _context.OrderItems.FindAsync(id);
-                if (orderItem == null)
-                    return NotFound(new { message = "Order item not found." });
+            var orderItem = await _context.OrderItems
+                .Include(oi => oi.Order)
+                .FirstOrDefaultAsync(oi => oi.OrderItemId == id && oi.Order.UserId == userId);
 
-                _context.OrderItems.Remove(orderItem);
-                await _context.SaveChangesAsync();
+            if (orderItem == null)
+                return NotFound(new { message = "Order item not found or access denied." });
 
-                return Ok(new { message = "Order item deleted successfully." });
-            }
-            catch (DbUpdateException)
-            {
-                return StatusCode(500, new { message = "Database error occurred while deleting the order item." });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Unexpected error occurred.", details = ex.Message });
-            }
-        }
+            _context.OrderItems.Remove(orderItem);
+            await _context.SaveChangesAsync();
 
-        // ================= HELPER: MAP DTO =================
-        private OrderItemDTO MapToDTO(OrderItem oi)
-        {
-            var variant = oi.Variant;
-            var product = variant.Product;
-
-            string coverImage = product.ProductImages.FirstOrDefault(i => i.IsCover == true)?.ImageUrl ?? "";
-
-            decimal finalPrice = CalculateFinalPrice(variant);
-
-            var specs = _context.VariantSpecificationOptions
-                .Where(vso => vso.VariantId == oi.VariantId &&
-                             (vso.Option.Specification.SpecificationName == "RAM" ||
-                              vso.Option.Specification.SpecificationName == "Storage" ||
-                              vso.Option.Specification.SpecificationName == "Color"))
-                .Select(vso => new VariantSpecificationOptionDTO
-                {
-                    OptionId = vso.OptionId,
-                    SpecificationName = vso.Option.Specification.SpecificationName,
-                    OptionValue = vso.Option.OptionValue
-                })
-                .ToList();
-
-            return new OrderItemDTO
-            {
-                OrderItemId = oi.OrderItemId,
-                OrderId = oi.OrderId,
-                VariantId = oi.VariantId,
-                Quantity = oi.Quantity,
-                Price = finalPrice,
-                CreatedAt = oi.CreatedAt,
-                ProductName = product.ProductName,
-                Image = coverImage,
-                VariantSpecifications = specs,
-                VariantSpecificationOptionsId = oi.VariantSpecificationOptionsId
-            };
+            return Ok(new { message = "Order item deleted successfully." });
         }
 
         // ================= HELPER: CALCULATE FINAL PRICE =================

@@ -2,13 +2,16 @@
 using Backend_Api.Models;
 using Backend_Api.Models.Model_Create;
 using Backend_Api.Models.Model_DTO;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
 
 namespace Backend_Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize] // 🔐 JWT enabled
     public class OrderAddressController : ControllerBase
     {
         private readonly LaptopHarbourDbContext _context;
@@ -18,22 +21,35 @@ namespace Backend_Api.Controllers
             _context = context;
         }
 
-        // ✅ CREATE Order Address
+        // ================= HELPER =================
+        private bool TryGetUserId(out int userId)
+        {
+            userId = 0;
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            return !string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out userId);
+        }
+
+        // ================= CREATE =================
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateOrderAddress model)
         {
+            if (!TryGetUserId(out int userId))
+                return Unauthorized();
+
             if (model == null || model.OrderId <= 0 || model.AddressId <= 0)
                 return BadRequest(new { message = "Invalid order address data." });
 
-            var orderExists = await _context.Orders.AnyAsync(o => o.OrderId == model.OrderId);
-            if (!orderExists)
-                return NotFound(new { message = "Order not found." });
+            var order = await _context.Orders
+                .FirstOrDefaultAsync(o => o.OrderId == model.OrderId && o.UserId == userId);
 
-            var address = await _context.Addresses.Include(a => a.City)
-                .FirstOrDefaultAsync(a => a.AddressId == model.AddressId);
+            if (order == null)
+                return NotFound(new { message = "Order not found or access denied." });
 
-            if (address == null)
-                return NotFound(new { message = "Address not found." });
+            var addressExists = await _context.Addresses
+                .AnyAsync(a => a.AddressId == model.AddressId && a.UserId == userId);
+
+            if (!addressExists)
+                return NotFound(new { message = "Address not found or access denied." });
 
             var orderAddress = new OrderAddress
             {
@@ -54,13 +70,17 @@ namespace Backend_Api.Controllers
             });
         }
 
-        // ✅ GET ALL Order Addresses
+        // ================= GET ALL =================
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
+            if (!TryGetUserId(out int userId))
+                return Unauthorized();
+
             var addresses = await _context.OrderAddresses
                 .Include(o => o.Address)
                 .ThenInclude(a => a.City)
+                .Where(o => o.Order.UserId == userId)
                 .OrderByDescending(o => o.CreatedAt)
                 .Select(o => new OrderAdressDTO
                 {
@@ -79,14 +99,17 @@ namespace Backend_Api.Controllers
             return Ok(addresses);
         }
 
-        // ✅ GET Order Address by ID
+        // ================= GET BY ID =================
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(long id)
         {
+            if (!TryGetUserId(out int userId))
+                return Unauthorized();
+
             var address = await _context.OrderAddresses
                 .Include(o => o.Address)
                 .ThenInclude(a => a.City)
-                .Where(o => o.OrderAddressId == id)
+                .Where(o => o.OrderAddressId == id && o.Order.UserId == userId)
                 .Select(o => new OrderAdressDTO
                 {
                     OrderAddressId = o.OrderAddressId,
@@ -107,14 +130,17 @@ namespace Backend_Api.Controllers
             return Ok(address);
         }
 
-        // ✅ GET Order Address by OrderId
+        // ================= GET BY ORDER =================
         [HttpGet("by-order/{orderId}")]
         public async Task<IActionResult> GetByOrderId(long orderId)
         {
+            if (!TryGetUserId(out int userId))
+                return Unauthorized();
+
             var address = await _context.OrderAddresses
                 .Include(o => o.Address)
                 .ThenInclude(a => a.City)
-                .Where(o => o.OrderId == orderId)
+                .Where(o => o.OrderId == orderId && o.Order.UserId == userId)
                 .Select(o => new OrderAdressDTO
                 {
                     OrderAddressId = o.OrderAddressId,
@@ -130,25 +156,24 @@ namespace Backend_Api.Controllers
                 .FirstOrDefaultAsync();
 
             if (address == null)
-                return NotFound(new { message = "Order address not found for this order." });
+                return NotFound(new { message = "Order address not found." });
 
             return Ok(address);
         }
 
-        // ✅ UPDATE Order Address
+        // ================= UPDATE =================
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(long id, [FromBody] CreateOrderAddress model)
         {
-            if (model == null || model.AddressId <= 0)
-                return BadRequest(new { message = "Invalid data." });
+            if (!TryGetUserId(out int userId))
+                return Unauthorized();
 
-            var orderAddress = await _context.OrderAddresses.FindAsync(id);
+            var orderAddress = await _context.OrderAddresses
+                .Include(o => o.Order)
+                .FirstOrDefaultAsync(o => o.OrderAddressId == id && o.Order.UserId == userId);
+
             if (orderAddress == null)
                 return NotFound(new { message = "Order address not found." });
-
-            var addressExists = await _context.Addresses.AnyAsync(a => a.AddressId == model.AddressId);
-            if (!addressExists)
-                return NotFound(new { message = "Address not found." });
 
             orderAddress.AddressId = model.AddressId;
             orderAddress.RecipientName = model.RecipientName;
@@ -159,11 +184,17 @@ namespace Backend_Api.Controllers
             return Ok(new { message = "Order address updated successfully." });
         }
 
-        // ✅ DELETE Order Address
+        // ================= DELETE =================
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(long id)
         {
-            var orderAddress = await _context.OrderAddresses.FindAsync(id);
+            if (!TryGetUserId(out int userId))
+                return Unauthorized();
+
+            var orderAddress = await _context.OrderAddresses
+                .Include(o => o.Order)
+                .FirstOrDefaultAsync(o => o.OrderAddressId == id && o.Order.UserId == userId);
+
             if (orderAddress == null)
                 return NotFound(new { message = "Order address not found." });
 

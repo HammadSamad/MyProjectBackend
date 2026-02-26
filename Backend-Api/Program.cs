@@ -75,12 +75,12 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 app.UseCors(MyAllowSpecificOrigins);
 
 app.UseAuthentication();
 app.UseAuthorization();
-
+app.Urls.Add("http://0.0.0.0:5230");
 app.UseStaticFiles();
 
 app.MapControllers();

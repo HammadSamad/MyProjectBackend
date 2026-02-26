@@ -7,12 +7,13 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 
 namespace Backend_Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    // [Authorize]
+    [Authorize] // JWT authentication enabled
     public class ShipmentController : ControllerBase
     {
         private readonly LaptopHarbourDbContext _context;
@@ -22,26 +23,34 @@ namespace Backend_Api.Controllers
             _context = context;
         }
 
+        // ================= HELPER: GET USER ID FROM JWT =================
+        private bool TryGetUserId(out int userId)
+        {
+            userId = 0;
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            return !string.IsNullOrEmpty(userIdStr) && int.TryParse(userIdStr, out userId);
+        }
+
         // ================= CREATE =================
-        // POST: api/Shipment
         [HttpPost]
         public async Task<IActionResult> CreateShipment([FromBody] CreateShipment model)
         {
+            if (!TryGetUserId(out int userId))
+                return Unauthorized(new { error = "Invalid or missing JWT token." });
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // 1️⃣ Validate Order
+                // 1️⃣ Get latest pending order for this user
                 var order = await _context.Orders
                     .Include(o => o.Shipments)
-                    .FirstOrDefaultAsync(o => o.OrderId == model.OrderId);
+                    .Where(o => o.UserId == userId && o.OrderStatus != "Cancelled")
+                    .OrderByDescending(o => o.CreatedAt)
+                    .FirstOrDefaultAsync();
 
                 if (order == null)
-                    return NotFound(new { error = "Order not found." });
+                    return NotFound(new { error = "No valid orders found for shipment." });
 
-                if (order.OrderStatus == "Cancelled")
-                    return BadRequest(new { error = "Cannot create shipment for a cancelled order." });
-
-                // Check if shipment already exists for this order
                 if (order.Shipments.Any())
                     return BadRequest(new { error = "A shipment already exists for this order." });
 
@@ -55,7 +64,7 @@ namespace Backend_Api.Controllers
                 // 3️⃣ Create Shipment
                 var shipment = new Shipment
                 {
-                    OrderId = model.OrderId,
+                    OrderId = order.OrderId,
                     CourierName = model.CourierName,
                     TrackingNumber = trackingNumber,
                     ShippingCost = model.ShippingCost,
@@ -69,12 +78,12 @@ namespace Backend_Api.Controllers
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                // 4️⃣ Return Response
                 return Ok(new
                 {
                     message = "Shipment created successfully",
                     shipmentId = shipment.ShipmentId,
-                    trackingNumber = shipment.TrackingNumber
+                    trackingNumber = shipment.TrackingNumber,
+                    orderId = order.OrderId
                 });
             }
             catch (Exception ex)
@@ -87,33 +96,32 @@ namespace Backend_Api.Controllers
         // ================= Helper Method =================
         private string GenerateTrackingNumber()
         {
-            // Format: SHP-yyMMddHHmmss-RND
             string prefix = "SHP";
             string timestamp = DateTime.UtcNow.ToString("yyMMddHHmmss");
             string randomPart = Guid.NewGuid().ToString("N").Substring(0, 4).ToUpper();
-
             return $"{prefix}-{timestamp}-{randomPart}";
         }
 
         // ================= UPDATE =================
-        // PUT: api/Shipment/5
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateShipment(long id, [FromBody] CreateShipment model)
         {
+            if (!TryGetUserId(out int userId))
+                return Unauthorized(new { error = "Invalid or missing JWT token." });
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
                 var shipment = await _context.Shipments
                     .Include(s => s.Order)
-                    .FirstOrDefaultAsync(s => s.ShipmentId == id);
+                    .FirstOrDefaultAsync(s => s.ShipmentId == id && s.Order.UserId == userId);
 
                 if (shipment == null)
-                    return NotFound(new { error = "Shipment not found." });
+                    return NotFound(new { error = "Shipment not found or does not belong to you." });
 
-                if (shipment.Order != null && shipment.Order.OrderStatus == "Cancelled")
+                if (shipment.Order.OrderStatus == "Cancelled")
                     return BadRequest(new { error = "Cannot update shipment for a cancelled order." });
 
-                // Validate Tracking Number uniqueness (if changed)
                 if (!string.IsNullOrEmpty(model.TrackingNumber) &&
                     model.TrackingNumber != shipment.TrackingNumber)
                 {
@@ -125,9 +133,10 @@ namespace Backend_Api.Controllers
                 shipment.ShippingCost = model.ShippingCost;
                 shipment.ExpectedDeliveryDate = model.ExpectedDeliveryDate;
 
-                // Only update tracking number if provided
                 if (!string.IsNullOrEmpty(model.TrackingNumber))
                     shipment.TrackingNumber = model.TrackingNumber;
+
+                shipment.UpdatedAt = DateTime.UtcNow;
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
@@ -142,63 +151,47 @@ namespace Backend_Api.Controllers
         }
 
         // ================= UPDATE STATUS =================
-        // PATCH: api/Shipment/{id}/status
-        // PATCH: api/Shipment/{id}/status
         [HttpPatch("{id}/status")]
         public async Task<IActionResult> UpdateShipmentStatus(long id, [FromBody] UpdateShipmentStatusRequest request)
         {
-            // Validate request
-            if (request == null)
-                return BadRequest(new { error = "Request body is required." });
+            if (!TryGetUserId(out int userId))
+                return Unauthorized(new { error = "Invalid or missing JWT token." });
 
-            if (string.IsNullOrWhiteSpace(request.Status))
+            if (request == null || string.IsNullOrWhiteSpace(request.Status))
                 return BadRequest(new { error = "Status is required." });
 
-            // Validate status value
             var validStatuses = new[] { "Pending", "Processing", "Shipped", "Delivered", "Cancelled", "Returned" };
             if (!validStatuses.Contains(request.Status, StringComparer.OrdinalIgnoreCase))
-                return BadRequest(new
-                {
-                    error = "Invalid status value.",
-                    validStatuses = string.Join(", ", validStatuses)
-                });
+                return BadRequest(new { error = "Invalid status value.", validStatuses = string.Join(", ", validStatuses) });
 
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                // Find shipment with order included
                 var shipment = await _context.Shipments
                     .Include(s => s.Order)
-                    .FirstOrDefaultAsync(s => s.ShipmentId == id);
+                    .FirstOrDefaultAsync(s => s.ShipmentId == id && s.Order.UserId == userId);
 
                 if (shipment == null)
-                    return NotFound(new { error = "Shipment not found." });
-
-                // Check if order exists and is not cancelled
-                if (shipment.Order == null)
-                    return BadRequest(new { error = "Associated order not found." });
+                    return NotFound(new { error = "Shipment not found or does not belong to you." });
 
                 if (shipment.Order.OrderStatus == "Cancelled")
                     return BadRequest(new { error = "Cannot update shipment for a cancelled order." });
 
-                // Prevent updating to same status
                 if (shipment.Status?.ToLower() == request.Status.ToLower())
                     return BadRequest(new { error = $"Shipment is already in '{request.Status}' status." });
 
-                // Validate status transitions
                 var currentStatus = shipment.Status?.ToLower();
                 var newStatus = request.Status.ToLower();
 
-                // Define allowed transitions (you can customize this)
                 var allowedTransitions = new Dictionary<string, List<string>>
-        {
-            { "pending", new List<string> { "processing", "cancelled" } },
-            { "processing", new List<string> { "shipped", "cancelled" } },
-            { "shipped", new List<string> { "delivered", "returned" } },
-            { "delivered", new List<string> { "returned" } },
-            { "cancelled", new List<string>() },
-            { "returned", new List<string>() }
-        };
+                {
+                    { "pending", new List<string> { "processing", "cancelled" } },
+                    { "processing", new List<string> { "shipped", "cancelled" } },
+                    { "shipped", new List<string> { "delivered", "returned" } },
+                    { "delivered", new List<string> { "returned" } },
+                    { "cancelled", new List<string>() },
+                    { "returned", new List<string>() }
+                };
 
                 if (!string.IsNullOrEmpty(currentStatus) &&
                     allowedTransitions.ContainsKey(currentStatus) &&
@@ -211,35 +204,27 @@ namespace Backend_Api.Controllers
                     });
                 }
 
-                // Update shipment
                 var oldStatus = shipment.Status;
                 shipment.Status = request.Status;
 
-                // Set timestamps based on status
                 if (request.Status.Equals("Shipped", StringComparison.OrdinalIgnoreCase))
                     shipment.ShippedAt = DateTime.UtcNow;
                 else if (request.Status.Equals("Delivered", StringComparison.OrdinalIgnoreCase))
+                {
                     shipment.DeliveredAt = DateTime.UtcNow;
+                    shipment.Order.OrderStatus = "Delivered";
+                    shipment.Order.UpdatedAt = DateTime.UtcNow;
+                }
                 else if (request.Status.Equals("Cancelled", StringComparison.OrdinalIgnoreCase))
                 {
-                    shipment.DeliveredAt = null;
                     shipment.ShippedAt = null;
+                    shipment.DeliveredAt = null;
                 }
 
                 shipment.UpdatedAt = DateTime.UtcNow;
 
-                // Update order status if needed (optional)
-                if (request.Status.Equals("Delivered", StringComparison.OrdinalIgnoreCase))
-                {
-                    shipment.Order.OrderStatus = "Delivered";
-                    shipment.Order.UpdatedAt = DateTime.UtcNow;
-                }
-
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
-
-                // Log the status change (you could add a logging service here)
-                Console.WriteLine($"Shipment {id} status changed from '{oldStatus}' to '{request.Status}'");
 
                 return Ok(new
                 {
@@ -250,57 +235,42 @@ namespace Backend_Api.Controllers
                     timestamp = DateTime.UtcNow
                 });
             }
-            catch (DbUpdateException dbEx)
-            {
-                await transaction.RollbackAsync();
-                return StatusCode(500, new
-                {
-                    error = "Database error while updating shipment status.",
-                    details = dbEx.InnerException?.Message ?? dbEx.Message
-                });
-            }
             catch (Exception ex)
             {
                 await transaction.RollbackAsync();
-                // Log the full exception here (use ILogger in production)
-                return StatusCode(500, new
-                {
-                    error = "An unexpected error occurred while updating shipment status.",
-                    details = ex.Message
-                });
+                return StatusCode(500, new { error = "Failed to update shipment status.", details = ex.Message });
             }
         }
 
-        // Request model with validation attributes
         public class UpdateShipmentStatusRequest
         {
-            [Required(ErrorMessage = "Status is required.")]
-            [StringLength(50, MinimumLength = 1, ErrorMessage = "Status must be between 1 and 50 characters.")]
-            [RegularExpression("^(Pending|Processing|Shipped|Delivered|Cancelled|Returned)$",
-                ErrorMessage = "Status must be one of: Pending, Processing, Shipped, Delivered, Cancelled, Returned")]
+            [Required]
+            [StringLength(50, MinimumLength = 1)]
+            [RegularExpression("^(Pending|Processing|Shipped|Delivered|Cancelled|Returned)$")]
             public string Status { get; set; } = string.Empty;
 
-            // Optional: Add notes/reason for status change
-            [StringLength(500, ErrorMessage = "Notes cannot exceed 500 characters.")]
+            [StringLength(500)]
             public string? Notes { get; set; }
         }
 
         // ================= DELETE =================
-        // DELETE: api/Shipment/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteShipment(long id)
         {
+            if (!TryGetUserId(out int userId))
+                return Unauthorized(new { error = "Invalid or missing JWT token." });
+
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
                 var shipment = await _context.Shipments
                     .Include(s => s.Order)
-                    .FirstOrDefaultAsync(s => s.ShipmentId == id);
+                    .FirstOrDefaultAsync(s => s.ShipmentId == id && s.Order.UserId == userId);
 
                 if (shipment == null)
-                    return NotFound(new { error = "Shipment not found." });
+                    return NotFound(new { error = "Shipment not found or does not belong to you." });
 
-                if (shipment.Order != null && shipment.Order.OrderStatus == "Cancelled")
+                if (shipment.Order.OrderStatus == "Cancelled")
                     return BadRequest(new { error = "Cannot delete shipment for a cancelled order." });
 
                 _context.Shipments.Remove(shipment);
@@ -320,10 +290,14 @@ namespace Backend_Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAllShipments()
         {
+            if (!TryGetUserId(out int userId))
+                return Unauthorized(new { error = "Invalid or missing JWT token." });
+
             try
             {
                 var shipments = await _context.Shipments
                     .Include(s => s.Order)
+                    .Where(s => s.Order.UserId == userId)
                     .Select(s => new ShipmentDTO
                     {
                         ShipmentId = s.ShipmentId,
@@ -351,10 +325,14 @@ namespace Backend_Api.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetShipmentById(long id)
         {
+            if (!TryGetUserId(out int userId))
+                return Unauthorized(new { error = "Invalid or missing JWT token." });
+
             try
             {
                 var shipment = await _context.Shipments
-                    .Where(s => s.ShipmentId == id)
+                    .Include(s => s.Order)
+                    .Where(s => s.ShipmentId == id && s.Order.UserId == userId)
                     .Select(s => new ShipmentDTO
                     {
                         ShipmentId = s.ShipmentId,
@@ -385,10 +363,14 @@ namespace Backend_Api.Controllers
         [HttpGet("order/{orderId}")]
         public async Task<IActionResult> GetShipmentsByOrderId(long orderId)
         {
+            if (!TryGetUserId(out int userId))
+                return Unauthorized(new { error = "Invalid or missing JWT token." });
+
             try
             {
                 var shipments = await _context.Shipments
-                    .Where(s => s.OrderId == orderId)
+                    .Include(s => s.Order)
+                    .Where(s => s.OrderId == orderId && s.Order.UserId == userId)
                     .Select(s => new ShipmentDTO
                     {
                         ShipmentId = s.ShipmentId,

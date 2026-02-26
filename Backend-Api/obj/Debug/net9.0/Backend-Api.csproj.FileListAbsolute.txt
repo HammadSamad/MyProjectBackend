@@ -164,3 +164,4 @@ D:\Projects\MyProjectBackend\Backend-Api\obj\Debug\net9.0\Backend-Api.genruntime
 D:\Projects\MyProjectBackend\Backend-Api\obj\Debug\net9.0\ref\Backend-Api.dll
 D:\Projects\MyProjectBackend\Backend-Api\obj\Debug\net9.0\Backend-Api.sourcelink.json
 D:\Projects\MyProjectBackend\Backend-Api\bin\Debug\net9.0\Backend-Api.staticwebassets.runtime.json
+D:\Projects\MyProjectBackend\Backend-Api\obj\Debug\net9.0\swae.build.ex.cache
