@@ -165,81 +165,83 @@ namespace Backend_Api.Controllers
         // Only: Image, Name, Min Price, Average Rating
         // =========================================================
         [HttpGet("display")]
-public async Task<IActionResult> GetProductsForDisplay()
-{
-    try
-    {
-        var products = await _context.Products
-            .Where(p => p.IsActive == true)
-            .Include(p => p.ProductImages)
-            .Include(p => p.ProductVariants)
-            .Include(p => p.ProductReviews)
-            .ToListAsync();
-
-        var result = products.Select(p =>
+        public async Task<IActionResult> GetProductsForDisplay()
         {
-            // Get cheapest variant by final discounted price
-            var cheapestVariant = p.ProductVariants
-                .OrderBy(v => CalculateFinalPrice(v))
-                .FirstOrDefault();
-
-            decimal originalPrice = cheapestVariant?.Price ?? 0;
-            decimal discountPrice = cheapestVariant != null
-                ? CalculateFinalPrice(cheapestVariant)
-                : 0;
-
-            bool isDiscounted = discountPrice < originalPrice;
-
-            // Calculate effective discount percentage
-            decimal discountPercentage = 0;
-            if (cheapestVariant != null && originalPrice > 0)
+            try
             {
-                discountPercentage = ((originalPrice - discountPrice) / originalPrice) * 100;
-                discountPercentage = Math.Round(discountPercentage, 2);
+                var products = await _context.Products
+                    .Where(p => p.IsActive == true)
+                    .Include(p => p.ProductImages)
+                    .Include(p => p.ProductVariants)
+                    .Include(p => p.ProductReviews)
+                    .ToListAsync();
+
+                var result = products.Select(p =>
+                {
+                    // Get cheapest variant by final discounted price
+                    var cheapestVariant = p.ProductVariants
+                        .OrderBy(v => CalculateFinalPrice(v))
+                        .FirstOrDefault();
+
+                    decimal originalPrice = cheapestVariant?.Price ?? 0;
+                    decimal discountPrice = cheapestVariant != null
+                        ? CalculateFinalPrice(cheapestVariant)
+                        : 0;
+
+                    bool isDiscounted = discountPrice < originalPrice;
+
+                    // Calculate effective discount percentage
+                    decimal discountPercentage = 0;
+                    if (cheapestVariant != null && originalPrice > 0)
+                    {
+                        discountPercentage = ((originalPrice - discountPrice) / originalPrice) * 100;
+                        discountPercentage = Math.Round(discountPercentage, 2);
+                    }
+
+                    // ✅ DECLARE BEFORE RETURN
+                    var coverFile = p.ProductImages
+                        .FirstOrDefault(i => i.IsCover == true)?.ImageUrl
+                        ?? p.ProductImages.FirstOrDefault()?.ImageUrl;
+
+                    return new ProductDisplayDTO
+                    {
+                        ProductId = p.ProductId,
+                        VariantId = cheapestVariant?.VariantId,
+                        ProductName = p.ProductName,
+
+                        // ✅ USE HERE
+                        ProductImage = GetImageUrl(coverFile),
+
+                        OriginalPrice = originalPrice,
+                        DiscountPrice = discountPrice,
+                        DiscountPercentage = discountPercentage,
+                        IsDiscounted = isDiscounted,
+
+                        AverageRating = p.ProductReviews.Any()
+                            ? Math.Round(p.ProductReviews.Average(r => r.Rating ?? 0), 1)
+                            : 0
+                    };
+                }).ToList();
+
+                if (!result.Any())
+                    return NotFound(new { message = "No products available for display." });
+
+                return Ok(new
+                {
+                    message = "Display products fetched successfully",
+                    total = result.Count,
+                    data = result
+                });
             }
-
-            return new ProductDisplayDTO
+            catch (Exception ex)
             {
-                ProductId = p.ProductId,
-
-                // ✅ Send VariantId of the cheapest variant
-                VariantId = cheapestVariant?.VariantId,
-
-                ProductName = p.ProductName,
-                ProductImage = p.ProductImages
-                    .FirstOrDefault(i => i.IsCover == true)?.ImageUrl
-                    ?? p.ProductImages.FirstOrDefault()?.ImageUrl,
-
-                OriginalPrice = originalPrice,
-                DiscountPrice = discountPrice,
-                DiscountPercentage = discountPercentage,
-                IsDiscounted = isDiscounted,
-
-                AverageRating = p.ProductReviews.Any()
-                    ? Math.Round(p.ProductReviews.Average(r => r.Rating ?? 0), 1)
-                    : 0
-            };
-        }).ToList();
-
-        if (!result.Any())
-            return NotFound(new { message = "No products available for display." });
-
-        return Ok(new
-        {
-            message = "Display products fetched successfully",
-            total = result.Count,
-            data = result
-        });
-    }
-    catch (Exception ex)
-    {
-        return StatusCode(500, new
-        {
-            message = "Error while fetching display products",
-            details = ex.Message
-        });
-    }
-}
+                return StatusCode(500, new
+                {
+                    message = "Error while fetching display products",
+                    details = ex.Message
+                });
+            }
+        }
 
 
 
@@ -383,6 +385,10 @@ public async Task<IActionResult> GetProductsForDisplay()
                     .OrderBy(v => CalculateFinalPrice(v))
                     .FirstOrDefault();
 
+                // ✅ Get cover image before the object initializer
+                var coverFile = p.ProductImages
+                    .FirstOrDefault(i => i.IsCover.GetValueOrDefault())?.ImageUrl;
+
                 return new ProductDTO
                 {
                     ProductId = p.ProductId,
@@ -396,11 +402,13 @@ public async Task<IActionResult> GetProductsForDisplay()
                     BrandName = p.Brand?.BrandName,
                     CategoryName = p.Category?.CategoryName,
 
-                    CoverImage = p.ProductImages.FirstOrDefault(i => i.IsCover == true)?.ImageUrl,
+                    CoverImage = GetImageUrl(coverFile),
+
                     GalleryImages = p.ProductImages
-                        .Where(i => i.IsCover != true)
-                        .Select(i => i.ImageUrl!)
-                        .ToList(),
+                        .Where(i => !i.IsCover.GetValueOrDefault())
+                        .Select(i => GetImageUrl(i.ImageUrl))
+                        .Where(url => url != null)
+                        .ToList()!,
 
                     // ✅ Minimum price information
                     MinPrice = cheapestVariant != null
@@ -445,6 +453,18 @@ public async Task<IActionResult> GetProductsForDisplay()
                         : 0
                 };
             }).ToList();
+        }
+
+        // =========================================================
+        // BUILD FULL IMAGE URL
+        // =========================================================
+        private string? GetImageUrl(string? fileName)
+        {
+            if (string.IsNullOrEmpty(fileName))
+                return null;
+
+            var baseUrl = $"{Request.Scheme}://{Request.Host}";
+            return $"{baseUrl}/upload/Products/{fileName}";
         }
 
 

@@ -100,18 +100,12 @@
   },
   {
     "ContainingType": "Backend_Api.Controllers.AddressController",
-    "Method": "GetAddressesByUser",
-    "RelativePath": "api/Address/user/{userId}",
+    "Method": "GetMyAddresses",
+    "RelativePath": "api/Address/me",
     "HttpMethod": "GET",
     "IsController": true,
     "Order": 0,
-    "Parameters": [
-      {
-        "Name": "userId",
-        "Type": "System.Int32",
-        "IsRequired": true
-      }
-    ],
+    "Parameters": [],
     "ReturnTypes": []
   },
   {

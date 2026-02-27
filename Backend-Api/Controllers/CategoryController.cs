@@ -22,10 +22,19 @@ namespace Backend_Api.Controllers
 
         private string GetCategoryImagePath()
         {
-            var path = Path.Combine(_env.WebRootPath, "uploads", "categories");
+            var path = Path.Combine(_env.WebRootPath, "upload", "categories");
             if (!Directory.Exists(path))
                 Directory.CreateDirectory(path);
             return path;
+        }
+
+        private string GetImageUrl(string? fileName)
+        {
+            var baseUrl = $"{Request.Scheme}://{Request.Host}";
+            if (string.IsNullOrEmpty(fileName))
+                return $"{baseUrl}/assets/categories/default-category.jpg"; // fallback image
+
+            return $"{baseUrl}/upload/categories/{fileName}";
         }
 
         // ================= CREATE =================
@@ -83,7 +92,7 @@ namespace Backend_Api.Controllers
                     {
                         CategoryId = c.CategoryId,
                         CategoryName = c.CategoryName,
-                        CategoryImage = c.CategoryImage,
+                        CategoryImage = GetImageUrl(c.CategoryImage),
                         ParentCategoryId = c.ParentCategoryId,
                         CreatedAt = c.CreatedAt,
                         UpdatedAt = c.UpdatedAt,
@@ -105,7 +114,7 @@ namespace Backend_Api.Controllers
                 {
                     CategoryId = c.CategoryId,
                     CategoryName = c.CategoryName,
-                    CategoryImage = c.CategoryImage,
+                    CategoryImage = GetImageUrl(c.CategoryImage),
                     ParentCategoryId = c.ParentCategoryId,
                     CreatedAt = c.CreatedAt,
                     UpdatedAt = c.UpdatedAt
@@ -191,5 +200,4 @@ namespace Backend_Api.Controllers
             return Ok(new { message = "Category deleted successfully." });
         }
     }
-
 }
