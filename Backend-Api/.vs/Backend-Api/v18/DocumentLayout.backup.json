@@ -3,12 +3,8 @@
   "WorkspaceRootPath": "D:\\Projects\\MyProjectBackend\\Backend-Api\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|d:\\projects\\myprojectbackend\\backend-api\\controllers\\categorycontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|solutionrelative:controllers\\categorycontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|d:\\projects\\myprojectbackend\\backend-api\\controllers\\productscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|solutionrelative:controllers\\productscontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|d:\\projects\\myprojectbackend\\backend-api\\controllers\\userprofilecontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|solutionrelative:controllers\\userprofilecontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -35,27 +31,14 @@
             {
               "$type": "Document",
               "DocumentIndex": 0,
-              "Title": "CategoryController.cs",
-              "DocumentMoniker": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Controllers\\CategoryController.cs",
-              "RelativeDocumentMoniker": "Controllers\\CategoryController.cs",
-              "ToolTip": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Controllers\\CategoryController.cs*",
-              "RelativeToolTip": "Controllers\\CategoryController.cs*",
-              "ViewState": "AgIAAA4AAAAAAAAAAAAvwCUAAAAJAAAAAAAAAA==",
+              "Title": "UserProfileController.cs",
+              "DocumentMoniker": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Controllers\\UserProfileController.cs",
+              "RelativeDocumentMoniker": "Controllers\\UserProfileController.cs",
+              "ToolTip": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Controllers\\UserProfileController.cs*",
+              "RelativeToolTip": "Controllers\\UserProfileController.cs*",
+              "ViewState": "AgIAAO0AAAAAAAAAAAAAwAcBAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-02-27T12:55:48.123Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 1,
-              "Title": "ProductsController.cs",
-              "DocumentMoniker": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Controllers\\ProductsController.cs",
-              "RelativeDocumentMoniker": "Controllers\\ProductsController.cs",
-              "ToolTip": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Controllers\\ProductsController.cs",
-              "RelativeToolTip": "Controllers\\ProductsController.cs",
-              "ViewState": "AgIAAMEAAAAAAAAAAADwv2cBAAA9AAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-02-27T12:11:54.515Z",
+              "WhenOpened": "2026-03-02T08:57:03.749Z",
               "EditorCaption": ""
             }
           ]

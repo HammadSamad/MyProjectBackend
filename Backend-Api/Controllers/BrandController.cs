@@ -16,9 +16,7 @@ public class BrandController : ControllerBase
         _context = context;
     }
 
-    // -------------------------------------------------------------
     // GET: api/Brand → List all brands with products
-    // -------------------------------------------------------------
     [HttpGet]
     public async Task<IActionResult> GetBrands()
     {
@@ -38,7 +36,7 @@ public class BrandController : ControllerBase
                     .ThenInclude(p => p.Category)
                 .ToListAsync();
 
-            if (brands.Count == 0)
+            if (!brands.Any())
                 return Ok(new { message = "No brands found.", data = new List<BrandDTO>() });
 
             var dto = brands.Select(MapBrandToDTO).ToList();
@@ -54,9 +52,7 @@ public class BrandController : ControllerBase
         }
     }
 
-    // -------------------------------------------------------------
     // GET: api/Brand/5 → Single brand
-    // -------------------------------------------------------------
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetBrand(int id)
     {
@@ -91,9 +87,7 @@ public class BrandController : ControllerBase
         }
     }
 
-    // -------------------------------------------------------------
     // POST: api/Brand → Create brand
-    // -------------------------------------------------------------
     [HttpPost]
     public async Task<IActionResult> CreateBrand([FromBody] CreateBrand model)
     {
@@ -134,9 +128,7 @@ public class BrandController : ControllerBase
         }
     }
 
-    // -------------------------------------------------------------
     // PUT: api/Brand/5 → Update brand
-    // -------------------------------------------------------------
     [HttpPut("{id:int}")]
     public async Task<IActionResult> UpdateBrand(int id, [FromBody] CreateBrand model)
     {
@@ -166,9 +158,7 @@ public class BrandController : ControllerBase
         }
     }
 
-    // -------------------------------------------------------------
     // DELETE: api/Brand/5 → Delete brand
-    // -------------------------------------------------------------
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> DeleteBrand(int id)
     {
@@ -176,17 +166,14 @@ public class BrandController : ControllerBase
         {
             var brand = await _context.Brands
                 .Include(b => b.Products)
-                .ThenInclude(p => p.ProductImages)
+                    .ThenInclude(p => p.ProductImages)
                 .FirstOrDefaultAsync(b => b.BrandId == id);
 
             if (brand == null)
                 return NotFound(new { message = "Brand not found." });
 
-            // Delete related product images + products
-            if (brand.Products.Count > 0)
-            {
+            if (brand.Products != null && brand.Products.Count > 0)
                 _context.Products.RemoveRange(brand.Products);
-            }
 
             _context.Brands.Remove(brand);
             await _context.SaveChangesAsync();
@@ -204,15 +191,15 @@ public class BrandController : ControllerBase
     }
 
     // =============================================================
-    // Helper method to map Brand → BrandDTO
+    // Helper method to map Brand → BrandDTO (null-safe)
     // =============================================================
     private BrandDTO MapBrandToDTO(Brand b)
     {
         return new BrandDTO
         {
             BrandId = b.BrandId,
-            BrandName = b.BrandName,
-            Products = b.Products.Select(p => new ProductDTO
+            BrandName = string.IsNullOrWhiteSpace(b.BrandName) ? "Unnamed Brand" : b.BrandName,
+            Products = b.Products?.Select(p => new ProductDTO
             {
                 ProductId = p.ProductId,
                 ProductName = p.ProductName,
@@ -221,39 +208,32 @@ public class BrandController : ControllerBase
                 IsActive = p.IsActive,
                 CreatedAt = p.CreatedAt,
                 UpdatedAt = p.UpdatedAt,
-                BrandName = b.BrandName,
+                BrandName = string.IsNullOrWhiteSpace(b.BrandName) ? "Unnamed Brand" : b.BrandName,
                 CategoryName = p.Category?.CategoryName,
-                CoverImage = p.ProductImages
-                    .FirstOrDefault(img => img.IsCover == true)?.ImageUrl,
-
-                GalleryImages = p.ProductImages
-                    .Where(img => img.IsCover == false)
-                    .Select(img => img.ImageUrl!)
-                    .ToList(),
-
-                Variants = p.ProductVariants.Select(v => new ProductVariantDTO
+                CoverImage = p.ProductImages?.FirstOrDefault(img => img.IsCover == true)?.ImageUrl,
+                GalleryImages = p.ProductImages?.Where(img => !img.IsCover == true).Select(img => img.ImageUrl!).ToList() ?? new List<string>(),
+                Variants = p.ProductVariants?.Select(v => new ProductVariantDTO
                 {
                     VariantId = v.VariantId,
                     Sku = v.Sku,
                     Price = v.Price,
                     Stock = v.Stock,
-                    Specifications = v.VariantSpecificationOptions.Select(vso => new VariantSpecificationOptionDTO
+                    Specifications = v.VariantSpecificationOptions?.Select(vso => new VariantSpecificationOptionDTO
                     {
-                        SpecificationName = vso.Option.Specification.SpecificationName,
-                        OptionValue = vso.Option.OptionValue
-                    }).ToList()
-                }).ToList(),
-
-                Specifications = p.ProductSpecificationValues.Select(psv => new ProductSpecificationDTO
+                        SpecificationName = vso.Option?.Specification?.SpecificationName,
+                        OptionValue = vso.Option?.OptionValue
+                    }).ToList() ?? new List<VariantSpecificationOptionDTO>()
+                }).ToList() ?? new List<ProductVariantDTO>(),
+                Specifications = p.ProductSpecificationValues?.Select(psv => new ProductSpecificationDTO
                 {
-                    SpecificationName = psv.Specification.SpecificationName,
-                    DataType = psv.Specification.DataType,
+                    SpecificationName = psv.Specification?.SpecificationName,
+                    DataType = psv.Specification?.DataType,
                     ValueText = psv.ValueText,
                     ValueNumber = psv.ValueNumber,
                     ValueBool = psv.ValueBool,
                     OptionValue = psv.Option?.OptionValue
-                }).ToList()
-            }).ToList()
+                }).ToList() ?? new List<ProductSpecificationDTO>()
+            }).ToList() ?? new List<ProductDTO>()
         };
     }
 }
