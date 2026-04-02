@@ -17,11 +17,15 @@ public partial class Shipment
 
     public string? Status { get; set; }
 
+    public DateTime? ExpectedDeliveryDate { get; set; }
+
     public DateTime? ShippedAt { get; set; }
 
     public DateTime? DeliveredAt { get; set; }
 
     public DateTime? CreatedAt { get; set; }
+
+    public DateTime? UpdatedAt { get; set; }
 
     public virtual Order Order { get; set; } = null!;
 }

@@ -1,7 +1,22 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "D:\\Projects\\MyProjectBackend\\Backend-Api\\",
-  "Documents": [],
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|d:\\projects\\myprojectbackend\\backend-api\\controllers\\productimagescontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|solutionrelative:controllers\\productimagescontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|ViewDataWindow_MSSQL__/DESKTOP_LEE1U0N/laptopHarbour_Db/True/SqlTable/dbo.product_images.sql||{0058A1F7-65F3-4DB9-B3D0-CA7E64DD73CD}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|ViewDataWindow_MSSQL__/DESKTOP_LEE1U0N/laptopHarbour_Db/True/SqlTable/dbo.products.sql||{0058A1F7-65F3-4DB9-B3D0-CA7E64DD73CD}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|d:\\projects\\myprojectbackend\\backend-api\\backend-api.http||{5703B403-55E7-4C63-8C88-A8F52C7A45C5}",
+      "RelativeMoniker": "D:0:0:{81A52FF1-789D-4978-9E0E-4B806930C509}|Backend-Api.csproj|solutionrelative:backend-api.http||{5703B403-55E7-4C63-8C88-A8F52C7A45C5}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
@@ -9,7 +24,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": -1,
+          "SelectedChildIndex": 3,
           "Children": [
             {
               "$type": "Bookmark",
@@ -22,6 +37,52 @@
             {
               "$type": "Bookmark",
               "Name": "ST:129:0:{1fc202d4-d401-403c-9834-5b218574bb67}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "ProductImagesController.cs",
+              "DocumentMoniker": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Controllers\\ProductImagesController.cs",
+              "RelativeDocumentMoniker": "Controllers\\ProductImagesController.cs",
+              "ToolTip": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Controllers\\ProductImagesController.cs",
+              "RelativeToolTip": "Controllers\\ProductImagesController.cs",
+              "ViewState": "AgIAAEQAAAAAAAAAAAAIwDAAAAAYAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-02-03T14:15:25.987Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "dbo.product_images [Data]",
+              "DocumentMoniker": "ViewDataWindow_MSSQL__/DESKTOP_LEE1U0N/laptopHarbour_Db/True/SqlTable/dbo.product_images.sql",
+              "ToolTip": "dbo.product_images [Data]",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000826|",
+              "WhenOpened": "2026-02-03T14:53:49.062Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "dbo.products [Data]",
+              "DocumentMoniker": "ViewDataWindow_MSSQL__/DESKTOP_LEE1U0N/laptopHarbour_Db/True/SqlTable/dbo.products.sql",
+              "ToolTip": "dbo.products [Data]",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000826|",
+              "WhenOpened": "2026-02-03T14:47:52.473Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "Backend-Api.http",
+              "DocumentMoniker": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Backend-Api.http",
+              "RelativeDocumentMoniker": "Backend-Api.http",
+              "ToolTip": "D:\\Projects\\MyProjectBackend\\Backend-Api\\Backend-Api.http",
+              "RelativeToolTip": "Backend-Api.http",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003502|",
+              "WhenOpened": "2026-02-03T14:38:11.847Z",
+              "EditorCaption": ""
             }
           ]
         }

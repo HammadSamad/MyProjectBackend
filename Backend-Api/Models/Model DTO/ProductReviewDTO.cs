@@ -10,6 +10,8 @@
 
         public string? UserName { get; set; }  // Comes from ProductReview.User.Username
 
+        public string? ImageUrl { get; set; }
+
         public DateTime? CreatedAt { get; set; }
 
         public DateTime? UpdatedAt { get; set; } 

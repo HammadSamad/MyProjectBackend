@@ -18,132 +18,162 @@ namespace Backend_Api.Controllers
             _context = context;
         }
 
-        // -------------------------------------------------------------
-        // GET: api/VariantSpecificationOptions → All variant specifications
-        // -------------------------------------------------------------
+        // GET: api/VariantSpecificationOptions
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var data = await _context.VariantSpecificationOptions
-                .Include(vso => vso.Option)
-                    .ThenInclude(o => o.Specification)
-                .Select(vso => new VariantSpecificationOptionDTO
-                {
-                    SpecificationName = vso.Option.Specification.SpecificationName,
-                    OptionValue = vso.Option.OptionValue
-                })
-                .ToListAsync();
+            try
+            {
+                var data = await _context.VariantSpecificationOptions
+                    .Include(vso => vso.Option)
+                        .ThenInclude(o => o.Specification)
+                    .Select(vso => new VariantSpecificationOptionDTO
+                    {
+                        SpecificationName = vso.Option.Specification.SpecificationName,
+                        OptionValue = vso.Option.OptionValue
+                    })
+                    .ToListAsync();
 
-            return Ok(data);
+                return Ok(data);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to retrieve variant specification options.", details = ex.Message });
+            }
         }
 
-        // -------------------------------------------------------------
-        // GET: api/VariantSpecificationOptions/variant/{variantId} → Variant options
-        // -------------------------------------------------------------
+        // GET: api/VariantSpecificationOptions/variant/{variantId}
         [HttpGet("variant/{variantId:int}")]
         public async Task<IActionResult> GetByVariant(int variantId)
         {
-            var data = await _context.VariantSpecificationOptions
-                .Where(vso => vso.VariantId == variantId)
-                .Include(vso => vso.Option)
-                    .ThenInclude(o => o.Specification)
-                .Select(vso => new VariantSpecificationOptionDTO
-                {
-                    SpecificationName = vso.Option.Specification.SpecificationName,
-                    OptionValue = vso.Option.OptionValue
-                })
-                .ToListAsync();
+            try
+            {
+                var data = await _context.VariantSpecificationOptions
+                    .Where(vso => vso.VariantId == variantId)
+                    .Include(vso => vso.Option)
+                        .ThenInclude(o => o.Specification)
+                    .Select(vso => new VariantSpecificationOptionDTO
+                    {
+                        SpecificationName = vso.Option.Specification.SpecificationName,
+                        OptionValue = vso.Option.OptionValue
+                    })
+                    .ToListAsync();
 
-            return Ok(data);
+                if (data.Count == 0)
+                    return NotFound(new { error = "No variant specification options found for this variant." });
+
+                return Ok(data);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to retrieve variant specification options for the variant.", details = ex.Message });
+            }
         }
 
-        // -------------------------------------------------------------
-        // POST: api/VariantSpecificationOptions → Add variant specification
-        // -------------------------------------------------------------
+        // POST: api/VariantSpecificationOptions
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateVariantSpecificationOption model)
         {
-            // Validate variant
-            var variantExists = await _context.ProductVariants
-                .AnyAsync(v => v.VariantId == model.VariantId);
-            if (!variantExists)
-                return NotFound("Variant not found.");
+            if (model == null)
+                return BadRequest(new { error = "Request body cannot be empty." });
 
-            // Validate option
-            var optionExists = await _context.SpecificationOptions
-                .AnyAsync(o => o.OptionId == model.OptionId);
-            if (!optionExists)
-                return NotFound("Specification option not found.");
-
-            // Check duplicate
-            var exists = await _context.VariantSpecificationOptions
-                .AnyAsync(vso => vso.VariantId == model.VariantId && vso.OptionId == model.OptionId);
-            if (exists)
-                return BadRequest("This option is already assigned to this variant.");
-
-            var vsoEntity = new VariantSpecificationOption
+            try
             {
-                VariantId = model.VariantId,
-                OptionId = model.OptionId,
-                CreatedAt = DateTime.UtcNow
-            };
+                // Validate variant
+                var variantExists = await _context.ProductVariants.AnyAsync(v => v.VariantId == model.VariantId);
+                if (!variantExists)
+                    return NotFound(new { error = "Variant not found." });
 
-            _context.VariantSpecificationOptions.Add(vsoEntity);
-            await _context.SaveChangesAsync();
+                // Validate option
+                var optionExists = await _context.SpecificationOptions.AnyAsync(o => o.OptionId == model.OptionId);
+                if (!optionExists)
+                    return NotFound(new { error = "Specification option not found." });
 
-            return Ok(new { message = "Variant specification option added successfully." });
+                // Check duplicate
+                var exists = await _context.VariantSpecificationOptions
+                    .AnyAsync(vso => vso.VariantId == model.VariantId && vso.OptionId == model.OptionId);
+                if (exists)
+                    return BadRequest(new { error = "This option is already assigned to this variant." });
+
+                var vsoEntity = new VariantSpecificationOption
+                {
+                    VariantId = model.VariantId,
+                    OptionId = model.OptionId,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.VariantSpecificationOptions.Add(vsoEntity);
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Variant specification option added successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to create variant specification option.", details = ex.Message });
+            }
         }
 
-        // -------------------------------------------------------------
-        // PUT: api/VariantSpecificationOptions/{variantId}/{optionId} → Update variant specification
-        // -------------------------------------------------------------
+        // PUT: api/VariantSpecificationOptions/{variantId}/{optionId}
         [HttpPut("{variantId:int}/{optionId:int}")]
         public async Task<IActionResult> Update(int variantId, int optionId, [FromBody] CreateVariantSpecificationOption model)
         {
-            var vso = await _context.VariantSpecificationOptions
-                .FirstOrDefaultAsync(v => v.VariantId == variantId && v.OptionId == optionId);
+            if (model == null)
+                return BadRequest(new { error = "Request body cannot be empty." });
 
-            if (vso == null)
-                return NotFound("Variant specification option not found.");
-
-            // Only allow changing OptionId to a different option
-            if (model.OptionId != optionId)
+            try
             {
-                var optionExists = await _context.SpecificationOptions.AnyAsync(o => o.OptionId == model.OptionId);
-                if (!optionExists)
-                    return NotFound("New specification option not found.");
+                var vso = await _context.VariantSpecificationOptions
+                    .FirstOrDefaultAsync(v => v.VariantId == variantId && v.OptionId == optionId);
 
-                // Check duplicate
-                var duplicate = await _context.VariantSpecificationOptions
-                    .AnyAsync(v => v.VariantId == variantId && v.OptionId == model.OptionId);
-                if (duplicate)
-                    return BadRequest("This option is already assigned to this variant.");
+                if (vso == null)
+                    return NotFound(new { error = "Variant specification option not found." });
 
-                vso.OptionId = model.OptionId;
+                if (model.OptionId != optionId)
+                {
+                    var optionExists = await _context.SpecificationOptions.AnyAsync(o => o.OptionId == model.OptionId);
+                    if (!optionExists)
+                        return NotFound(new { error = "New specification option not found." });
+
+                    var duplicate = await _context.VariantSpecificationOptions
+                        .AnyAsync(v => v.VariantId == variantId && v.OptionId == model.OptionId);
+                    if (duplicate)
+                        return BadRequest(new { error = "This option is already assigned to this variant." });
+
+                    vso.OptionId = model.OptionId;
+                }
+
+                vso.CreatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Variant specification option updated successfully." });
             }
-
-            vso.CreatedAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Variant specification option updated successfully." });
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to update variant specification option.", details = ex.Message });
+            }
         }
 
-        // -------------------------------------------------------------
-        // DELETE: api/VariantSpecificationOptions/{variantId}/{optionId} → Delete variant specification
-        // -------------------------------------------------------------
+        // DELETE: api/VariantSpecificationOptions/{variantId}/{optionId}
         [HttpDelete("{variantId:int}/{optionId:int}")]
         public async Task<IActionResult> Delete(int variantId, int optionId)
         {
-            var vso = await _context.VariantSpecificationOptions
-                .FirstOrDefaultAsync(v => v.VariantId == variantId && v.OptionId == optionId);
+            try
+            {
+                var vso = await _context.VariantSpecificationOptions
+                    .FirstOrDefaultAsync(v => v.VariantId == variantId && v.OptionId == optionId);
 
-            if (vso == null)
-                return NotFound("Variant specification option not found.");
+                if (vso == null)
+                    return NotFound(new { error = "Variant specification option not found." });
 
-            _context.VariantSpecificationOptions.Remove(vso);
-            await _context.SaveChangesAsync();
+                _context.VariantSpecificationOptions.Remove(vso);
+                await _context.SaveChangesAsync();
 
-            return Ok(new { message = "Variant specification option deleted successfully." });
+                return Ok(new { message = "Variant specification option deleted successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to delete variant specification option.", details = ex.Message });
+            }
         }
     }
 }

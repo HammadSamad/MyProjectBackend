@@ -13,7 +13,7 @@ public partial class Order
 
     public int? PaymentMethodId { get; set; }
 
-    public string? OrderStatus { get; set; }
+    public string OrderStatus { get; set; } = null!;
 
     public DateTime? CreatedAt { get; set; }
 

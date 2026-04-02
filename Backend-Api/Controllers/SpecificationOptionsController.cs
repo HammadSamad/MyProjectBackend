@@ -4,6 +4,7 @@ using Backend_Api.Models.Model_Create;
 using Backend_Api.Models.Model_DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System;
 
 namespace Backend_Api.Controllers
 {
@@ -24,15 +25,22 @@ namespace Backend_Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var data = await _context.SpecificationOptions
-                .Select(o => new SpecificationOptionDTO
-                {
-                    OptionId = o.OptionId,
-                    OptionValue = o.OptionValue
-                })
-                .ToListAsync();
+            try
+            {
+                var data = await _context.SpecificationOptions
+                    .Select(o => new SpecificationOptionDTO
+                    {
+                        OptionId = o.OptionId,
+                        OptionValue = o.OptionValue
+                    })
+                    .ToListAsync();
 
-            return Ok(data);
+                return Ok(data);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch specification options.", details = ex.Message });
+            }
         }
 
         // ---------------------------------------------------------
@@ -41,19 +49,26 @@ namespace Backend_Api.Controllers
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetById(int id)
         {
-            var option = await _context.SpecificationOptions
-                .Where(o => o.OptionId == id)
-                .Select(o => new SpecificationOptionDTO
-                {
-                    OptionId = o.OptionId,
-                    OptionValue = o.OptionValue
-                })
-                .FirstOrDefaultAsync();
+            try
+            {
+                var option = await _context.SpecificationOptions
+                    .Where(o => o.OptionId == id)
+                    .Select(o => new SpecificationOptionDTO
+                    {
+                        OptionId = o.OptionId,
+                        OptionValue = o.OptionValue
+                    })
+                    .FirstOrDefaultAsync();
 
-            if (option == null)
-                return NotFound("Specification option not found.");
+                if (option == null)
+                    return NotFound(new { error = "Specification option not found." });
 
-            return Ok(option);
+                return Ok(option);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch specification option.", details = ex.Message });
+            }
         }
 
         // ---------------------------------------------------------
@@ -62,16 +77,26 @@ namespace Backend_Api.Controllers
         [HttpGet("specification/{specificationId:int}")]
         public async Task<IActionResult> GetBySpecification(int specificationId)
         {
-            var options = await _context.SpecificationOptions
-                .Where(o => o.SpecificationId == specificationId)
-                .Select(o => new SpecificationOptionDTO
-                {
-                    OptionId = o.OptionId,
-                    OptionValue = o.OptionValue
-                })
-                .ToListAsync();
+            try
+            {
+                var options = await _context.SpecificationOptions
+                    .Where(o => o.SpecificationId == specificationId)
+                    .Select(o => new SpecificationOptionDTO
+                    {
+                        OptionId = o.OptionId,
+                        OptionValue = o.OptionValue
+                    })
+                    .ToListAsync();
 
-            return Ok(options);
+                if (!options.Any())
+                    return NotFound(new { error = "No options found for this specification." });
+
+                return Ok(options);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to fetch specification options.", details = ex.Message });
+            }
         }
 
         // ---------------------------------------------------------
@@ -80,32 +105,51 @@ namespace Backend_Api.Controllers
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateSpecificationOption model)
         {
-            if (model.SpecificationId <= 0)
-                return BadRequest("Invalid specification ID.");
-
-            if (string.IsNullOrWhiteSpace(model.OptionValue))
-                return BadRequest("Option value is required.");
-
-            var specExists = await _context.SpecificationDefinitions
-                .AnyAsync(s => s.SpecificationId == model.SpecificationId);
-            if (!specExists)
-                return NotFound("Specification not found.");
-
-            var option = new SpecificationOption
+            try
             {
-                SpecificationId = model.SpecificationId,
-                OptionValue = model.OptionValue,
-                CreatedAt = DateTime.UtcNow
-            };
+                if (model.SpecificationId <= 0)
+                    return BadRequest(new { error = "Invalid specification ID." });
 
-            _context.SpecificationOptions.Add(option);
-            await _context.SaveChangesAsync();
+                var optionValue = model.OptionValue?.Trim() ?? "";
+                if (string.IsNullOrWhiteSpace(optionValue))
+                    return BadRequest(new { error = "Option value is required." });
 
-            return Ok(new
+                var specExists = await _context.SpecificationDefinitions
+                    .AnyAsync(s => s.SpecificationId == model.SpecificationId);
+                if (!specExists)
+                    return NotFound(new { error = "Specification not found." });
+
+                // FIXED: EF Core compatible case-insensitive check
+                var normalizedValue = optionValue.ToLower();
+                if (await _context.SpecificationOptions.AnyAsync(o =>
+                        o.SpecificationId == model.SpecificationId &&
+                        o.OptionValue != null &&
+                        o.OptionValue.ToLower() == normalizedValue))
+                {
+                    return BadRequest(new { error = "Option value already exists for this specification." });
+                }
+
+                var option = new SpecificationOption
+                {
+                    SpecificationId = model.SpecificationId,
+                    OptionValue = optionValue,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _context.SpecificationOptions.Add(option);
+                await _context.SaveChangesAsync();
+
+                // REST correct response: 201 Created
+                return CreatedAtAction(nameof(GetById), new { id = option.OptionId }, new
+                {
+                    message = "Specification option created successfully.",
+                    optionId = option.OptionId
+                });
+            }
+            catch (Exception ex)
             {
-                message = "Specification option created successfully.",
-                optionId = option.OptionId
-            });
+                return StatusCode(500, new { error = "Failed to create specification option.", details = ex.Message });
+            }
         }
 
         // ---------------------------------------------------------
@@ -114,26 +158,49 @@ namespace Backend_Api.Controllers
         [HttpPut("{id:int}")]
         public async Task<IActionResult> Update(int id, [FromBody] CreateSpecificationOption model)
         {
-            var option = await _context.SpecificationOptions.FindAsync(id);
-            if (option == null)
-                return NotFound("Specification option not found.");
-
-            if (!string.IsNullOrWhiteSpace(model.OptionValue))
-                option.OptionValue = model.OptionValue;
-
-            if (model.SpecificationId > 0 && model.SpecificationId != option.SpecificationId)
+            try
             {
-                var specExists = await _context.SpecificationDefinitions
-                    .AnyAsync(s => s.SpecificationId == model.SpecificationId);
-                if (!specExists)
-                    return NotFound("Specification not found.");
+                var option = await _context.SpecificationOptions.FindAsync(id);
+                if (option == null)
+                    return NotFound(new { error = "Specification option not found." });
 
-                option.SpecificationId = model.SpecificationId;
+                if (!string.IsNullOrWhiteSpace(model.OptionValue))
+                {
+                    var valueTrimmed = model.OptionValue.Trim();
+                    var normalizedValue = valueTrimmed.ToLower();
+
+                    // FIXED: EF Core compatible case-insensitive duplicate check
+                    if (await _context.SpecificationOptions.AnyAsync(o =>
+                            o.SpecificationId == option.SpecificationId &&
+                            o.OptionId != id &&
+                            o.OptionValue != null &&
+                            o.OptionValue.ToLower() == normalizedValue))
+                    {
+                        return BadRequest(new { error = "Option value already exists for this specification." });
+                    }
+
+                    option.OptionValue = valueTrimmed;
+                }
+
+                if (model.SpecificationId > 0 && model.SpecificationId != option.SpecificationId)
+                {
+                    var specExists = await _context.SpecificationDefinitions
+                        .AnyAsync(s => s.SpecificationId == model.SpecificationId);
+
+                    if (!specExists)
+                        return NotFound(new { error = "Specification not found." });
+
+                    option.SpecificationId = model.SpecificationId;
+                }
+
+                await _context.SaveChangesAsync();
+
+                return Ok(new { message = "Specification option updated successfully." });
             }
-
-            await _context.SaveChangesAsync();
-
-            return Ok(new { message = "Specification option updated successfully." });
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Failed to update specification option.", details = ex.Message });
+            }
         }
 
         // ---------------------------------------------------------
@@ -142,22 +209,32 @@ namespace Backend_Api.Controllers
         [HttpDelete("{id:int}")]
         public async Task<IActionResult> Delete(int id)
         {
-            var option = await _context.SpecificationOptions
-                .Include(o => o.ProductSpecificationValues)
-                .Include(o => o.VariantSpecificationOptions)
-                .FirstOrDefaultAsync(o => o.OptionId == id);
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var option = await _context.SpecificationOptions
+                    .Include(o => o.ProductSpecificationValues)
+                    .Include(o => o.VariantSpecificationOptions)
+                    .FirstOrDefaultAsync(o => o.OptionId == id);
 
-            if (option == null)
-                return NotFound("Specification option not found.");
+                if (option == null)
+                    return NotFound(new { error = "Specification option not found." });
 
-            // Remove dependencies first
-            _context.ProductSpecificationValues.RemoveRange(option.ProductSpecificationValues);
-            _context.VariantSpecificationOptions.RemoveRange(option.VariantSpecificationOptions);
+                // Remove dependencies first
+                _context.ProductSpecificationValues.RemoveRange(option.ProductSpecificationValues);
+                _context.VariantSpecificationOptions.RemoveRange(option.VariantSpecificationOptions);
+                _context.SpecificationOptions.Remove(option);
 
-            _context.SpecificationOptions.Remove(option);
-            await _context.SaveChangesAsync();
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
 
-            return Ok(new { message = "Specification option deleted successfully." });
+                return Ok(new { message = "Specification option deleted successfully." });
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                return StatusCode(500, new { error = "Failed to delete specification option.", details = ex.Message });
+            }
         }
     }
 }

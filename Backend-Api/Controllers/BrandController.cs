@@ -5,24 +5,22 @@ using Backend_Api.Models.Model_DTO;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace Backend_Api.Controllers
+[Route("api/[controller]")]
+[ApiController]
+public class BrandController : ControllerBase
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class BrandController : ControllerBase
+    private readonly LaptopHarbourDbContext _context;
+
+    public BrandController(LaptopHarbourDbContext context)
     {
-        private readonly LaptopHarbourDbContext _context;
+        _context = context;
+    }
 
-        public BrandController(LaptopHarbourDbContext context)
-        {
-            _context = context;
-        }
-
-        // -------------------------------------------------------------
-        // GET: api/Brands → List all brands with products
-        // -------------------------------------------------------------
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<BrandDTO>>> GetBrands()
+    // GET: api/Brand → List all brands with products
+    [HttpGet]
+    public async Task<IActionResult> GetBrands()
+    {
+        try
         {
             var brands = await _context.Brands
                 .Include(b => b.Products)
@@ -34,62 +32,33 @@ namespace Backend_Api.Controllers
                 .Include(b => b.Products)
                     .ThenInclude(p => p.ProductSpecificationValues)
                         .ThenInclude(psv => psv.Option)
+                .Include(b => b.Products)
+                    .ThenInclude(p => p.Category)
                 .ToListAsync();
 
-            var dto = brands.Select(b => new BrandDTO
-            {
-                BrandId = b.BrandId,
-                BrandName = b.BrandName,
-                Products = b.Products.Select(p => new ProductDTO
-                {
-                    ProductId = p.ProductId,
-                    ProductName = p.ProductName,
-                    Description = p.Description,
-                    WarrantyMonths = p.WarrantyMonths,
-                    IsActive = p.IsActive,
-                    CreatedAt = p.CreatedAt,
-                    UpdatedAt = p.UpdatedAt,
-                    BrandName = b.BrandName,
-                    CategoryName = p.Category.CategoryName,
-                    CoverImage = p.ProductImages.FirstOrDefault(img => img.IsCover == true)?.ImageUrl,
-                    GalleryImages = p.ProductImages
-                                    .Where(img => img.IsCover == false)
-                                    .Select(img => img.ImageUrl!)
-                                    .ToList(),
-                    Variants = p.ProductVariants.Select(v => new ProductVariantDTO
-                    {
-                        VariantId = v.VariantId,
-                        Sku = v.Sku,
-                        Price = v.Price,
-                        Stock = v.Stock,
-                        Specifications = v.VariantSpecificationOptions.Select(vso => new VariantSpecificationOptionDTO
-                        {
-                            SpecificationName = vso.Option.Specification.SpecificationName,
-                            OptionValue = vso.Option.OptionValue
-                        }).ToList()
-                    }).ToList(),
-                    Specifications = p.ProductSpecificationValues.Select(psv => new ProductSpecificationDTO
-                    {
-                        SpecificationName = psv.Specification.SpecificationName,
-                        DataType = psv.Specification.DataType,
-                        ValueText = psv.ValueText,
-                        ValueNumber = psv.ValueNumber,
-                        ValueBool = psv.ValueBool,
-                        OptionValue = psv.Option?.OptionValue
-                    }).ToList()
-                }).ToList()
-            }).ToList();
+            if (!brands.Any())
+                return Ok(new { message = "No brands found.", data = new List<BrandDTO>() });
 
+            var dto = brands.Select(MapBrandToDTO).ToList();
             return Ok(dto);
         }
-
-        // -------------------------------------------------------------
-        // GET: api/Brands/5 → Single brand
-        // -------------------------------------------------------------
-        [HttpGet("{id}")]
-        public async Task<ActionResult<BrandDTO>> GetBrand(int id)
+        catch (Exception ex)
         {
-            var b = await _context.Brands
+            return StatusCode(500, new
+            {
+                message = "An error occurred while fetching brands.",
+                error = ex.Message
+            });
+        }
+    }
+
+    // GET: api/Brand/5 → Single brand
+    [HttpGet("{id:int}")]
+    public async Task<IActionResult> GetBrand(int id)
+    {
+        try
+        {
+            var brand = await _context.Brands
                 .Include(b => b.Products)
                     .ThenInclude(p => p.ProductImages)
                 .Include(b => b.Products)
@@ -99,65 +68,39 @@ namespace Backend_Api.Controllers
                 .Include(b => b.Products)
                     .ThenInclude(p => p.ProductSpecificationValues)
                         .ThenInclude(psv => psv.Option)
+                .Include(b => b.Products)
+                    .ThenInclude(p => p.Category)
                 .FirstOrDefaultAsync(b => b.BrandId == id);
 
-            if (b == null) return NotFound();
+            if (brand == null)
+                return NotFound(new { message = "Brand not found." });
 
-            var dto = new BrandDTO
-            {
-                BrandId = b.BrandId,
-                BrandName = b.BrandName,
-                Products = b.Products.Select(p => new ProductDTO
-                {
-                    ProductId = p.ProductId,
-                    ProductName = p.ProductName,
-                    Description = p.Description,
-                    WarrantyMonths = p.WarrantyMonths,
-                    IsActive = p.IsActive,
-                    CreatedAt = p.CreatedAt,
-                    UpdatedAt = p.UpdatedAt,
-                    BrandName = b.BrandName,
-                    CategoryName = p.Category.CategoryName,
-                    CoverImage = p.ProductImages.FirstOrDefault(img => img.IsCover == true)?.ImageUrl,
-                    GalleryImages = p.ProductImages
-                                    .Where(img => img.IsCover == false)
-                                    .Select(img => img.ImageUrl!)
-                                    .ToList(),
-                    Variants = p.ProductVariants.Select(v => new ProductVariantDTO
-                    {
-                        VariantId = v.VariantId,
-                        Sku = v.Sku,
-                        Price = v.Price,
-                        Stock = v.Stock,
-                        Specifications = v.VariantSpecificationOptions.Select(vso => new VariantSpecificationOptionDTO
-                        {
-                            SpecificationName = vso.Option.Specification.SpecificationName,
-                            OptionValue = vso.Option.OptionValue
-                        }).ToList()
-                    }).ToList(),
-                    Specifications = p.ProductSpecificationValues.Select(psv => new ProductSpecificationDTO
-                    {
-                        SpecificationName = psv.Specification.SpecificationName,
-                        DataType = psv.Specification.DataType,
-                        ValueText = psv.ValueText,
-                        ValueNumber = psv.ValueNumber,
-                        ValueBool = psv.ValueBool,
-                        OptionValue = psv.Option?.OptionValue
-                    }).ToList()
-                }).ToList()
-            };
-
-            return Ok(dto);
+            return Ok(MapBrandToDTO(brand));
         }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                message = "An error occurred while fetching the brand.",
+                error = ex.Message
+            });
+        }
+    }
 
-        // -------------------------------------------------------------
-        // POST: api/Brands → Create brand
-        // -------------------------------------------------------------
-        [HttpPost]
-        public async Task<ActionResult<BrandDTO>> CreateBrand([FromBody] CreateBrand model)
+    // POST: api/Brand → Create brand
+    [HttpPost]
+    public async Task<IActionResult> CreateBrand([FromBody] CreateBrand model)
+    {
+        try
         {
             if (model == null || string.IsNullOrWhiteSpace(model.BrandName))
-                return BadRequest("BrandName is required.");
+                return BadRequest(new { message = "BrandName is required." });
+
+            bool exists = await _context.Brands
+                .AnyAsync(b => b.BrandName!.ToLower() == model.BrandName.ToLower());
+
+            if (exists)
+                return BadRequest(new { message = "Brand with this name already exists." });
 
             var brand = new Brand
             {
@@ -169,49 +112,128 @@ namespace Backend_Api.Controllers
             _context.Brands.Add(brand);
             await _context.SaveChangesAsync();
 
-            return await GetBrand(brand.BrandId);
+            return Ok(new
+            {
+                message = "Brand created successfully.",
+                brandId = brand.BrandId
+            });
         }
-
-        // -------------------------------------------------------------
-        // PUT: api/Brands/5 → Update brand
-        // -------------------------------------------------------------
-        [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateBrand(int id, [FromBody] CreateBrand model)
+        catch (Exception ex)
         {
-            var brand = await _context.Brands.FindAsync(id);
-            if (brand == null) return NotFound();
+            return StatusCode(500, new
+            {
+                message = "An error occurred while creating the brand.",
+                error = ex.Message
+            });
+        }
+    }
 
-            brand.BrandName = model.BrandName ?? brand.BrandName;
+    // PUT: api/Brand/5 → Update brand
+    [HttpPut("{id:int}")]
+    public async Task<IActionResult> UpdateBrand(int id, [FromBody] CreateBrand model)
+    {
+        try
+        {
+            if (model == null || string.IsNullOrWhiteSpace(model.BrandName))
+                return BadRequest(new { message = "BrandName is required." });
+
+            var brand = await _context.Brands.FindAsync(id);
+            if (brand == null)
+                return NotFound(new { message = "Brand not found." });
+
+            brand.BrandName = model.BrandName;
             brand.UpdatedAt = DateTime.UtcNow;
 
-            _context.Brands.Update(brand);
             await _context.SaveChangesAsync();
 
-            return NoContent();
+            return Ok(new { message = "Brand updated successfully." });
         }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                message = "An error occurred while updating the brand.",
+                error = ex.Message
+            });
+        }
+    }
 
-        // -------------------------------------------------------------
-        // DELETE: api/Brands/5 → Delete brand
-        // -------------------------------------------------------------
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteBrand(int id)
+    // DELETE: api/Brand/5 → Delete brand
+    [HttpDelete("{id:int}")]
+    public async Task<IActionResult> DeleteBrand(int id)
+    {
+        try
         {
             var brand = await _context.Brands
                 .Include(b => b.Products)
+                    .ThenInclude(p => p.ProductImages)
                 .FirstOrDefaultAsync(b => b.BrandId == id);
 
-            if (brand == null) return NotFound();
+            if (brand == null)
+                return NotFound(new { message = "Brand not found." });
 
-            // Optional: Delete all products under this brand
-            if (brand.Products.Any())
-            {
+            if (brand.Products != null && brand.Products.Count > 0)
                 _context.Products.RemoveRange(brand.Products);
-            }
 
             _context.Brands.Remove(brand);
             await _context.SaveChangesAsync();
 
-            return NoContent();
+            return Ok(new { message = "Brand and all related products deleted successfully." });
         }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                message = "An error occurred while deleting the brand.",
+                error = ex.Message
+            });
+        }
+    }
+
+    // =============================================================
+    // Helper method to map Brand → BrandDTO (null-safe)
+    // =============================================================
+    private BrandDTO MapBrandToDTO(Brand b)
+    {
+        return new BrandDTO
+        {
+            BrandId = b.BrandId,
+            BrandName = string.IsNullOrWhiteSpace(b.BrandName) ? "Unnamed Brand" : b.BrandName,
+            Products = b.Products?.Select(p => new ProductDTO
+            {
+                ProductId = p.ProductId,
+                ProductName = p.ProductName,
+                Description = p.Description,
+                WarrantyMonths = p.WarrantyMonths,
+                IsActive = p.IsActive,
+                CreatedAt = p.CreatedAt,
+                UpdatedAt = p.UpdatedAt,
+                BrandName = string.IsNullOrWhiteSpace(b.BrandName) ? "Unnamed Brand" : b.BrandName,
+                CategoryName = p.Category?.CategoryName,
+                CoverImage = p.ProductImages?.FirstOrDefault(img => img.IsCover == true)?.ImageUrl,
+                GalleryImages = p.ProductImages?.Where(img => !img.IsCover == true).Select(img => img.ImageUrl!).ToList() ?? new List<string>(),
+                Variants = p.ProductVariants?.Select(v => new ProductVariantDTO
+                {
+                    VariantId = v.VariantId,
+                    Sku = v.Sku,
+                    Price = v.Price,
+                    Stock = v.Stock,
+                    Specifications = v.VariantSpecificationOptions?.Select(vso => new VariantSpecificationOptionDTO
+                    {
+                        SpecificationName = vso.Option?.Specification?.SpecificationName,
+                        OptionValue = vso.Option?.OptionValue
+                    }).ToList() ?? new List<VariantSpecificationOptionDTO>()
+                }).ToList() ?? new List<ProductVariantDTO>(),
+                Specifications = p.ProductSpecificationValues?.Select(psv => new ProductSpecificationDTO
+                {
+                    SpecificationName = psv.Specification?.SpecificationName,
+                    DataType = psv.Specification?.DataType,
+                    ValueText = psv.ValueText,
+                    ValueNumber = psv.ValueNumber,
+                    ValueBool = psv.ValueBool,
+                    OptionValue = psv.Option?.OptionValue
+                }).ToList() ?? new List<ProductSpecificationDTO>()
+            }).ToList() ?? new List<ProductDTO>()
+        };
     }
 }

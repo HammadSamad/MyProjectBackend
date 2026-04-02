@@ -17,11 +17,15 @@ public partial class Address
 
     public string? PostalCode { get; set; }
 
+    public bool? IsDefault { get; set; }
+
     public DateTime? CreatedAt { get; set; }
 
     public DateTime? UpdatedAt { get; set; }
 
     public virtual City City { get; set; } = null!;
+
+    public virtual ICollection<OrderAddress> OrderAddresses { get; set; } = new List<OrderAddress>();
 
     public virtual User User { get; set; } = null!;
 }

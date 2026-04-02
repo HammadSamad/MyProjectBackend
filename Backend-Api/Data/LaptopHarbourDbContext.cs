@@ -62,9 +62,15 @@ public partial class LaptopHarbourDbContext : DbContext
 
     public virtual DbSet<ProductVariant> ProductVariants { get; set; }
 
+    public virtual DbSet<ProductView> ProductViews { get; set; }
+
+    public virtual DbSet<RefreshToken> RefreshTokens { get; set; }
+
     public virtual DbSet<Refund> Refunds { get; set; }
 
     public virtual DbSet<Return> Returns { get; set; }
+
+    public virtual DbSet<ReviewImage> ReviewImages { get; set; }
 
     public virtual DbSet<Role> Roles { get; set; }
 
@@ -79,6 +85,8 @@ public partial class LaptopHarbourDbContext : DbContext
     public virtual DbSet<SpecificationOption> SpecificationOptions { get; set; }
 
     public virtual DbSet<User> Users { get; set; }
+
+    public virtual DbSet<UserProfile> UserProfiles { get; set; }
 
     public virtual DbSet<UserRecentOrder> UserRecentOrders { get; set; }
 
@@ -98,9 +106,9 @@ public partial class LaptopHarbourDbContext : DbContext
     {
         modelBuilder.Entity<Address>(entity =>
         {
-            entity.HasKey(e => e.AddressId).HasName("PK__addresse__CAA247C81DDD32B0");
+            entity.HasKey(e => e.AddressId).HasName("PK__tmp_ms_x__CAA247C83C30046B");
 
-            entity.ToTable("addresses");
+            entity.ToTable("addresses", tb => tb.HasTrigger("trg_UpdateUpdatedAt_Addresses"));
 
             entity.Property(e => e.AddressId).HasColumnName("address_id");
             entity.Property(e => e.AddressLine1)
@@ -113,6 +121,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
                 .HasColumnName("created_at");
+            entity.Property(e => e.IsDefault).HasDefaultValue(false);
             entity.Property(e => e.PostalCode)
                 .HasMaxLength(20)
                 .HasColumnName("postal_code");
@@ -122,19 +131,19 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.City).WithMany(p => p.Addresses)
                 .HasForeignKey(d => d.CityId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__addresses__city___6A30C649");
+                .HasConstraintName("FK__addresses__city___14B10FFA");
 
             entity.HasOne(d => d.User).WithMany(p => p.Addresses)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__addresses__user___57DD0BE4");
+                .HasConstraintName("FK__addresses__user___13BCEBC1");
         });
 
         modelBuilder.Entity<Brand>(entity =>
         {
             entity.HasKey(e => e.BrandId).HasName("PK__brands__5E5A8E2776EA7A2F");
 
-            entity.ToTable("brands");
+            entity.ToTable("brands", tb => tb.HasTrigger("trg_UpdateUpdatedAt_Brands"));
 
             entity.HasIndex(e => e.BrandName, "UQ__brands__0C0C3B58C58E067D").IsUnique();
 
@@ -152,7 +161,11 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.CartId).HasName("PK__carts__2EF52A2779F94932");
 
-            entity.ToTable("carts");
+            entity.ToTable("carts", tb =>
+                {
+                    tb.HasTrigger("trg_CleanupCartItems");
+                    tb.HasTrigger("trg_UpdateUpdatedAt_Carts");
+                });
 
             entity.Property(e => e.CartId).HasColumnName("cart_id");
             entity.Property(e => e.CreatedAt)
@@ -164,12 +177,12 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.Carts)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__carts__user_id__531856C7");
+                .HasConstraintName("FK__carts__user_id__038683F8");
         });
 
         modelBuilder.Entity<CartItem>(entity =>
         {
-            entity.HasKey(e => e.CartItemId).HasName("PK__cart_ite__5D9A6C6E621F248A");
+            entity.HasKey(e => e.CartItemId).HasName("PK__tmp_ms_x__5D9A6C6EA4C28666");
 
             entity.ToTable("cart_items");
 
@@ -180,23 +193,29 @@ public partial class LaptopHarbourDbContext : DbContext
                 .HasColumnName("created_at");
             entity.Property(e => e.Quantity).HasColumnName("quantity");
             entity.Property(e => e.VariantId).HasColumnName("variant_id");
+            entity.Property(e => e.VariantSpecificationOptionsId).HasColumnName("variant_specification_options_id");
 
             entity.HasOne(d => d.Cart).WithMany(p => p.CartItems)
                 .HasForeignKey(d => d.CartId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__cart_item__cart___1BC821DD");
+                .HasConstraintName("FK__cart_item__cart___3B95D2F1");
 
             entity.HasOne(d => d.Variant).WithMany(p => p.CartItems)
                 .HasForeignKey(d => d.VariantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__cart_item__varia__1CBC4616");
+                .HasConstraintName("FK__cart_item__varia__3AA1AEB8");
+
+            entity.HasOne(d => d.VariantSpecificationOptions).WithMany(p => p.CartItems)
+                .HasForeignKey(d => d.VariantSpecificationOptionsId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK__cart_item__varia__3C89F72A");
         });
 
         modelBuilder.Entity<Category>(entity =>
         {
             entity.HasKey(e => e.CategoryId).HasName("PK__categori__D54EE9B4B54EA5AF");
 
-            entity.ToTable("categories");
+            entity.ToTable("categories", tb => tb.HasTrigger("trg_UpdateUpdatedAt_Categories"));
 
             entity.Property(e => e.CategoryId).HasColumnName("category_id");
             entity.Property(e => e.CategoryImage)
@@ -230,6 +249,9 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
                 .HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnName("updated_at");
 
             entity.HasOne(d => d.Country).WithMany(p => p.Cities)
                 .HasForeignKey(d => d.CountryId)
@@ -239,9 +261,13 @@ public partial class LaptopHarbourDbContext : DbContext
 
         modelBuilder.Entity<Complaint>(entity =>
         {
-            entity.HasKey(e => e.ComplaintId).HasName("PK__complain__A771F61CDF7EEB5D");
+            entity.HasKey(e => e.ComplaintId).HasName("PK__tmp_ms_x__A771F61C9F9898B7");
 
-            entity.ToTable("complaints");
+            entity.ToTable("complaints", tb =>
+                {
+                    tb.HasTrigger("trg_ComplaintStatus_Notify");
+                    tb.HasTrigger("trg_UpdateUpdatedAt_Complaints");
+                });
 
             entity.Property(e => e.ComplaintId).HasColumnName("complaint_id");
             entity.Property(e => e.CreatedAt)
@@ -250,12 +276,16 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.Property(e => e.Description)
                 .HasMaxLength(2000)
                 .HasColumnName("description");
+            entity.Property(e => e.Image)
+                .HasMaxLength(500)
+                .HasColumnName("image");
             entity.Property(e => e.OrderId).HasColumnName("order_id");
             entity.Property(e => e.Priority)
                 .HasMaxLength(20)
                 .HasColumnName("priority");
             entity.Property(e => e.Status)
                 .HasMaxLength(30)
+                .HasDefaultValue("open")
                 .HasColumnName("status");
             entity.Property(e => e.Subject)
                 .HasMaxLength(200)
@@ -265,17 +295,17 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.HasOne(d => d.Order).WithMany(p => p.Complaints)
                 .HasForeignKey(d => d.OrderId)
-                .HasConstraintName("FK__complaint__order__2704CA5F");
+                .HasConstraintName("FK__complaint__order__62E4AA3C");
 
             entity.HasOne(d => d.User).WithMany(p => p.Complaints)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__complaint__user___2610A626");
+                .HasConstraintName("FK__complaint__user___61F08603");
         });
 
         modelBuilder.Entity<ComplaintMessage>(entity =>
         {
-            entity.HasKey(e => e.MessageId).HasName("PK__complain__0BBF6EE6A35DA7F7");
+            entity.HasKey(e => e.MessageId).HasName("PK__tmp_ms_x__0BBF6EE61DB39029");
 
             entity.ToTable("complaint_messages");
 
@@ -284,6 +314,9 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
                 .HasColumnName("created_at");
+            entity.Property(e => e.Image)
+                .HasMaxLength(500)
+                .HasColumnName("image");
             entity.Property(e => e.Message)
                 .HasMaxLength(2000)
                 .HasColumnName("message");
@@ -294,7 +327,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Complaint).WithMany(p => p.ComplaintMessages)
                 .HasForeignKey(d => d.ComplaintId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__complaint__compl__2AD55B43");
+                .HasConstraintName("FK__complaint__compl__6A85CC04");
         });
 
         modelBuilder.Entity<Country>(entity =>
@@ -367,14 +400,20 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.HasOne(d => d.User).WithMany(p => p.Notifications)
                 .HasForeignKey(d => d.UserId)
-                .HasConstraintName("FK__notificat__user___719CDDE7");
+                .HasConstraintName("FK__notificat__user___0E04126B");
         });
 
         modelBuilder.Entity<Order>(entity =>
         {
             entity.HasKey(e => e.OrderId).HasName("PK__orders__46596229DF36D567");
 
-            entity.ToTable("orders");
+            entity.ToTable("orders", tb =>
+                {
+                    tb.HasTrigger("trg_AutoCancel_UnpaidOrders");
+                    tb.HasTrigger("trg_ClearCartItems_AfterOrder");
+                    tb.HasTrigger("trg_OrderStatusChange_Notify");
+                    tb.HasTrigger("trg_UpdateUpdatedAt_Orders");
+                });
 
             entity.Property(e => e.OrderId).HasColumnName("order_id");
             entity.Property(e => e.CreatedAt)
@@ -382,6 +421,7 @@ public partial class LaptopHarbourDbContext : DbContext
                 .HasColumnName("created_at");
             entity.Property(e => e.OrderStatus)
                 .HasMaxLength(30)
+                .HasDefaultValue("pending")
                 .HasColumnName("order_status");
             entity.Property(e => e.PaymentMethodId).HasColumnName("payment_method_id");
             entity.Property(e => e.TotalAmount)
@@ -397,38 +437,44 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.Orders)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__orders__user_id__55009F39");
+                .HasConstraintName("FK__orders__user_id__084B3915");
         });
 
         modelBuilder.Entity<OrderAddress>(entity =>
         {
-            entity.HasKey(e => e.OrderAddressId).HasName("PK__order_ad__9A9DCB57946C407A");
+            entity.HasKey(e => e.OrderAddressId).HasName("PK__tmp_ms_x__9A9DCB571D7D71EB");
 
             entity.ToTable("order_addresses");
 
             entity.Property(e => e.OrderAddressId).HasColumnName("order_address_id");
+            entity.Property(e => e.AddressId).HasColumnName("address_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
                 .HasColumnName("created_at");
-            entity.Property(e => e.FullAddress)
-                .HasMaxLength(500)
-                .HasColumnName("full_address");
             entity.Property(e => e.OrderId).HasColumnName("order_id");
             entity.Property(e => e.Phone)
                 .HasMaxLength(25)
                 .HasColumnName("phone");
+            entity.Property(e => e.RecipientName)
+                .HasMaxLength(100)
+                .HasColumnName("recipient_name");
+
+            entity.HasOne(d => d.Address).WithMany(p => p.OrderAddresses)
+                .HasForeignKey(d => d.AddressId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK__order_add__addre__61BB7BD9");
 
             entity.HasOne(d => d.Order).WithMany(p => p.OrderAddresses)
                 .HasForeignKey(d => d.OrderId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__order_add__order__37703C52");
+                .HasConstraintName("FK__order_add__order__60C757A0");
         });
 
         modelBuilder.Entity<OrderItem>(entity =>
         {
-            entity.HasKey(e => e.OrderItemId).HasName("PK__order_it__3764B6BC30F2AEFE");
+            entity.HasKey(e => e.OrderItemId).HasName("PK__tmp_ms_x__3764B6BCA5A9F060");
 
-            entity.ToTable("order_items");
+            entity.ToTable("order_items", tb => tb.HasTrigger("trg_DecreaseStock_OnOrder"));
 
             entity.Property(e => e.OrderItemId).HasColumnName("order_item_id");
             entity.Property(e => e.CreatedAt)
@@ -440,16 +486,22 @@ public partial class LaptopHarbourDbContext : DbContext
                 .HasColumnName("price");
             entity.Property(e => e.Quantity).HasColumnName("quantity");
             entity.Property(e => e.VariantId).HasColumnName("variant_id");
+            entity.Property(e => e.VariantSpecificationOptionsId).HasColumnName("variant_specification_options_id");
 
             entity.HasOne(d => d.Order).WithMany(p => p.OrderItems)
                 .HasForeignKey(d => d.OrderId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__order_ite__order__32AB8735");
+                .HasConstraintName("FK__order_ite__order__4EA8A765");
 
             entity.HasOne(d => d.Variant).WithMany(p => p.OrderItems)
                 .HasForeignKey(d => d.VariantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__order_ite__varia__339FAB6E");
+                .HasConstraintName("FK__order_ite__varia__4DB4832C");
+
+            entity.HasOne(d => d.VariantSpecificationOptions).WithMany(p => p.OrderItems)
+                .HasForeignKey(d => d.VariantSpecificationOptionsId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK__order_ite__varia__4F9CCB9E");
         });
 
         modelBuilder.Entity<PasswordResetToken>(entity =>
@@ -474,7 +526,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.PasswordResetTokens)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__password___user___1C873BEC");
+                .HasConstraintName("FK__password___user___047AA831");
         });
 
         modelBuilder.Entity<Payment>(entity =>
@@ -495,6 +547,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.Property(e => e.PaymentMethodId).HasColumnName("payment_method_id");
             entity.Property(e => e.Status)
                 .HasMaxLength(30)
+                .HasDefaultValue("pending")
                 .HasColumnName("status");
             entity.Property(e => e.TransactionReference)
                 .HasMaxLength(200)
@@ -514,7 +567,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.Payments)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__payments__user_i__214BF109");
+                .HasConstraintName("FK__payments__user_i__056ECC6A");
         });
 
         modelBuilder.Entity<PaymentMethod>(entity =>
@@ -530,6 +583,9 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.Property(e => e.MethodName)
                 .HasMaxLength(50)
                 .HasColumnName("method_name");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnName("updated_at");
         });
 
         modelBuilder.Entity<Permission>(entity =>
@@ -555,7 +611,7 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.ProductId).HasName("PK__products__47027DF549946710");
 
-            entity.ToTable("products");
+            entity.ToTable("products", tb => tb.HasTrigger("trg_UpdateUpdatedAt_Products"));
 
             entity.Property(e => e.ProductId).HasColumnName("product_id");
             entity.Property(e => e.BrandId).HasColumnName("brand_id");
@@ -612,7 +668,7 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.ReviewId).HasName("PK__product___60883D90EEC32F2F");
 
-            entity.ToTable("product_reviews");
+            entity.ToTable("product_reviews", tb => tb.HasTrigger("trg_UpdateUpdatedAt_ProductReviews"));
 
             entity.Property(e => e.ReviewId).HasColumnName("review_id");
             entity.Property(e => e.CreatedAt)
@@ -636,7 +692,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.ProductReviews)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__product_r__user___55F4C372");
+                .HasConstraintName("FK__product_r__user___093F5D4E");
         });
 
         modelBuilder.Entity<ProductSpecificationValue>(entity =>
@@ -676,16 +732,31 @@ public partial class LaptopHarbourDbContext : DbContext
 
         modelBuilder.Entity<ProductVariant>(entity =>
         {
-            entity.HasKey(e => e.VariantId).HasName("PK__product___EACC68B7E4D2F74C");
+            entity.HasKey(e => e.VariantId).HasName("PK__tmp_ms_x__EACC68B7FFF3CDF1");
 
-            entity.ToTable("product_variants");
+            entity.ToTable("product_variants", tb =>
+                {
+                    tb.HasTrigger("trg_LogVariantPriceChange");
+                    tb.HasTrigger("trg_LowStock_Notify");
+                    tb.HasTrigger("trg_UpdateUpdatedAt_ProductVariants");
+                });
 
-            entity.HasIndex(e => e.Sku, "UQ__product___DDDF4BE7DF3F2180").IsUnique();
+            entity.HasIndex(e => e.Sku, "UQ__tmp_ms_x__DDDF4BE71FE219C8").IsUnique();
+
+            entity.HasIndex(e => e.Sku, "UQ__tmp_ms_x__DDDF4BE7F114AB11").IsUnique();
 
             entity.Property(e => e.VariantId).HasColumnName("variant_id");
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
                 .HasColumnName("created_at");
+            entity.Property(e => e.DiscountAmount)
+                .HasColumnType("decimal(18, 2)")
+                .HasColumnName("discount_amount");
+            entity.Property(e => e.DiscountEnd).HasColumnName("discount_end");
+            entity.Property(e => e.DiscountPercentage)
+                .HasColumnType("decimal(5, 2)")
+                .HasColumnName("discount_percentage");
+            entity.Property(e => e.DiscountStart).HasColumnName("discount_start");
             entity.Property(e => e.Price)
                 .HasColumnType("decimal(18, 2)")
                 .HasColumnName("price");
@@ -699,14 +770,51 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Product).WithMany(p => p.ProductVariants)
                 .HasForeignKey(d => d.ProductId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__product_v__produ__0E6E26BF");
+                .HasConstraintName("FK__product_v__produ__16644E42");
+        });
+
+        modelBuilder.Entity<ProductView>(entity =>
+        {
+            entity.HasKey(e => e.ViewId).HasName("PK__product___B5A34EE238C8872E");
+
+            entity.ToTable("product_views", tb => tb.HasTrigger("trg_CleanupOldProductViews"));
+
+            entity.Property(e => e.ViewId).HasColumnName("view_id");
+            entity.Property(e => e.ProductId).HasColumnName("product_id");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+            entity.Property(e => e.ViewedAt)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnName("viewed_at");
+
+            entity.HasOne(d => d.Product).WithMany(p => p.ProductViews)
+                .HasForeignKey(d => d.ProductId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK__product_v__produ__5C37ACAD");
+
+            entity.HasOne(d => d.User).WithMany(p => p.ProductViews)
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("FK__product_v__user___5B438874");
+        });
+
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.HasKey(e => e.RefreshTokenId).HasName("PK__RefreshT__F5845E395EF5989C");
+
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())");
+            entity.Property(e => e.Token).HasMaxLength(500);
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+
+            entity.HasOne(d => d.User).WithMany(p => p.RefreshTokens)
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK_RefreshTokens_Users");
         });
 
         modelBuilder.Entity<Refund>(entity =>
         {
             entity.HasKey(e => e.RefundId).HasName("PK__refunds__897E9EA3DA435AAD");
 
-            entity.ToTable("refunds");
+            entity.ToTable("refunds", tb => tb.HasTrigger("trg_RefundProcessed_Notify"));
 
             entity.Property(e => e.RefundId).HasColumnName("refund_id");
             entity.Property(e => e.Amount)
@@ -739,7 +847,11 @@ public partial class LaptopHarbourDbContext : DbContext
         {
             entity.HasKey(e => e.ReturnId).HasName("PK__returns__35C234730CD511CF");
 
-            entity.ToTable("returns");
+            entity.ToTable("returns", tb =>
+                {
+                    tb.HasTrigger("trg_IncreaseStock_OnReturn");
+                    tb.HasTrigger("trg_ReturnStatus_Notify");
+                });
 
             entity.Property(e => e.ReturnId).HasColumnName("return_id");
             entity.Property(e => e.CreatedAt)
@@ -751,6 +863,7 @@ public partial class LaptopHarbourDbContext : DbContext
                 .HasColumnName("reason");
             entity.Property(e => e.Status)
                 .HasMaxLength(30)
+                .HasDefaultValue("requested")
                 .HasColumnName("status");
             entity.Property(e => e.UserId).HasColumnName("user_id");
 
@@ -762,7 +875,24 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.Returns)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__returns__user_id__0F2D40CE");
+                .HasConstraintName("FK__returns__user_id__00AA174D");
+        });
+
+        modelBuilder.Entity<ReviewImage>(entity =>
+        {
+            entity.HasKey(e => e.ReviewImageId).HasName("PK__review_i__9523BBD5E2B01877");
+
+            entity.ToTable("review_images");
+
+            entity.Property(e => e.ReviewImageId).HasColumnName("reviewImage_id");
+            entity.Property(e => e.ImageUrl)
+                .HasMaxLength(500)
+                .HasColumnName("imageUrl");
+            entity.Property(e => e.ReviewId).HasColumnName("review_id");
+
+            entity.HasOne(d => d.Review).WithMany(p => p.ReviewImages)
+                .HasForeignKey(d => d.ReviewId)
+                .HasConstraintName("FK_review_images_product_reviews");
         });
 
         modelBuilder.Entity<Role>(entity =>
@@ -823,14 +953,14 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.HasOne(d => d.User).WithMany(p => p.SearchHistories)
                 .HasForeignKey(d => d.UserId)
-                .HasConstraintName("FK__search_hi__user___12FDD1B2");
+                .HasConstraintName("FK__search_hi__user___019E3B86");
         });
 
         modelBuilder.Entity<Shipment>(entity =>
         {
-            entity.HasKey(e => e.ShipmentId).HasName("PK__shipment__41466E5980AB6880");
+            entity.HasKey(e => e.ShipmentId).HasName("PK__tmp_ms_x__41466E59A956F909");
 
-            entity.ToTable("shipments");
+            entity.ToTable("shipments", tb => tb.HasTrigger("trg_ShipmentStatus_Notify"));
 
             entity.Property(e => e.ShipmentId).HasColumnName("shipment_id");
             entity.Property(e => e.CourierName)
@@ -839,7 +969,11 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.Property(e => e.CreatedAt)
                 .HasDefaultValueSql("(sysutcdatetime())")
                 .HasColumnName("created_at");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnName("updated_at");
             entity.Property(e => e.DeliveredAt).HasColumnName("delivered_at");
+            entity.Property(e => e.ExpectedDeliveryDate).HasColumnName("expected_delivery_date");
             entity.Property(e => e.OrderId).HasColumnName("order_id");
             entity.Property(e => e.ShippedAt).HasColumnName("shipped_at");
             entity.Property(e => e.ShippingCost)
@@ -855,7 +989,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Order).WithMany(p => p.Shipments)
                 .HasForeignKey(d => d.OrderId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__shipments__order__0A688BB1");
+                .HasConstraintName("FK__shipments__order__3429BB53");
         });
 
         modelBuilder.Entity<SpecificationDefinition>(entity =>
@@ -903,13 +1037,13 @@ public partial class LaptopHarbourDbContext : DbContext
 
         modelBuilder.Entity<User>(entity =>
         {
-            entity.HasKey(e => e.UserId).HasName("PK__tmp_ms_x__B9BE370F199CC095");
+            entity.HasKey(e => e.UserId).HasName("PK__tmp_ms_x__B9BE370FC419F2E1");
 
-            entity.ToTable("users");
+            entity.ToTable("users", tb => tb.HasTrigger("trg_UpdateUpdatedAt_Users"));
 
-            entity.HasIndex(e => e.Email, "UQ__tmp_ms_x__AB6E61643F4BAB7B").IsUnique();
+            entity.HasIndex(e => e.Email, "UQ__tmp_ms_x__AB6E61643A120AD1").IsUnique();
 
-            entity.HasIndex(e => e.Username, "UQ__tmp_ms_x__F3DBC572CCBE67C5").IsUnique();
+            entity.HasIndex(e => e.Username, "UQ__tmp_ms_x__F3DBC5721B0B15DA").IsUnique();
 
             entity.Property(e => e.UserId).HasColumnName("user_id");
             entity.Property(e => e.CreatedAt)
@@ -924,11 +1058,13 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.Property(e => e.IsActive)
                 .HasDefaultValue(true)
                 .HasColumnName("is_active");
+            entity.Property(e => e.IsEmailVerified).HasDefaultValue(false);
+            entity.Property(e => e.IsPhoneVerified).HasDefaultValue(false);
             entity.Property(e => e.LastName)
                 .HasMaxLength(80)
                 .HasColumnName("last_name");
             entity.Property(e => e.PasswordHash)
-                .HasMaxLength(256)
+                .HasMaxLength(500)
                 .HasColumnName("password_hash");
             entity.Property(e => e.PhoneNumber)
                 .HasMaxLength(25)
@@ -937,6 +1073,35 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.Property(e => e.Username)
                 .HasMaxLength(80)
                 .HasColumnName("username");
+        });
+
+        modelBuilder.Entity<UserProfile>(entity =>
+        {
+            entity.HasKey(e => e.ProfileId).HasName("PK__user_pro__AEBB701FBDBEDC89");
+
+            entity.ToTable("user_profiles", tb => tb.HasTrigger("trg_UpdateUpdatedAt_UserProfiles"));
+
+            entity.HasIndex(e => e.UserId, "UQ__user_pro__B9BE370E2BB74815").IsUnique();
+
+            entity.Property(e => e.ProfileId).HasColumnName("profile_id");
+            entity.Property(e => e.Bio)
+                .HasMaxLength(500)
+                .HasColumnName("bio");
+            entity.Property(e => e.CreatedAt)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnName("created_at");
+            entity.Property(e => e.ProfileImage)
+                .HasMaxLength(500)
+                .HasColumnName("profile_image");
+            entity.Property(e => e.UpdatedAt)
+                .HasDefaultValueSql("(sysutcdatetime())")
+                .HasColumnName("updated_at");
+            entity.Property(e => e.UserId).HasColumnName("user_id");
+
+            entity.HasOne(d => d.User).WithOne(p => p.UserProfile)
+                .HasForeignKey<UserProfile>(d => d.UserId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("FK__user_prof__user___0B27A5C0");
         });
 
         modelBuilder.Entity<UserRecentOrder>(entity =>
@@ -960,7 +1125,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.UserRecentOrders)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__user_rece__user___16CE6296");
+                .HasConstraintName("FK__user_rece__user___02925FBF");
         });
 
         modelBuilder.Entity<UserRole>(entity =>
@@ -983,7 +1148,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.UserRoles)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__user_role__user___56E8E7AB");
+                .HasConstraintName("FK__user_role__user___0A338187");
         });
 
         modelBuilder.Entity<UserVerification>(entity =>
@@ -1011,7 +1176,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.User).WithMany(p => p.UserVerifications)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__user_veri__user___6442E2C9");
+                .HasConstraintName("FK__user_veri__user___0C1BC9F9");
         });
 
         modelBuilder.Entity<VariantPriceHistory>(entity =>
@@ -1035,7 +1200,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Variant).WithMany(p => p.VariantPriceHistories)
                 .HasForeignKey(d => d.VariantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__variant_p__varia__40F9A68C");
+                .HasConstraintName("FK__variant_p__varia__1B29035F");
         });
 
         modelBuilder.Entity<VariantSpecificationOption>(entity =>
@@ -1058,14 +1223,14 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Variant).WithMany(p => p.VariantSpecificationOptions)
                 .HasForeignKey(d => d.VariantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__variant_s__varia__123EB7A3");
+                .HasConstraintName("FK__variant_s__varia__1758727B");
         });
 
         modelBuilder.Entity<Wishlist>(entity =>
         {
             entity.HasKey(e => e.WishlistId).HasName("PK__wishlist__6151514EEABA9E73");
 
-            entity.ToTable("wishlists");
+            entity.ToTable("wishlists", tb => tb.HasTrigger("trg_CleanupWishlistItems"));
 
             entity.HasIndex(e => e.UserId, "UQ__wishlist__B9BE370E7AA893E5").IsUnique();
 
@@ -1077,7 +1242,7 @@ public partial class LaptopHarbourDbContext : DbContext
 
             entity.HasOne(d => d.User).WithOne(p => p.Wishlist)
                 .HasForeignKey<Wishlist>(d => d.UserId)
-                .HasConstraintName("FK__wishlists__user___540C7B00");
+                .HasConstraintName("FK__wishlists__user___0662F0A3");
         });
 
         modelBuilder.Entity<WishlistItem>(entity =>
@@ -1096,7 +1261,7 @@ public partial class LaptopHarbourDbContext : DbContext
             entity.HasOne(d => d.Variant).WithMany(p => p.WishlistItems)
                 .HasForeignKey(d => d.VariantId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
-                .HasConstraintName("FK__wishlist___varia__2645B050");
+                .HasConstraintName("FK__wishlist___varia__1940BAED");
 
             entity.HasOne(d => d.Wishlist).WithMany(p => p.WishlistItems)
                 .HasForeignKey(d => d.WishlistId)
